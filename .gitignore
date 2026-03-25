@@ -1,0 +1,21 @@
+# Build outputs
+/build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Cache
+.thefeed/
+
+# Session data
+session.json
+
+# Environment files
+.env
