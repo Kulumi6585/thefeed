@@ -25,7 +25,7 @@ type ResolverChecker struct {
 // timeout is the per-probe deadline; 0 uses a 5-second default.
 func NewResolverChecker(fetcher *Fetcher, timeout time.Duration) *ResolverChecker {
 	if timeout <= 0 {
-		timeout = 5 * time.Second
+		timeout = 10 * time.Second
 	}
 	return &ResolverChecker{
 		fetcher: fetcher,

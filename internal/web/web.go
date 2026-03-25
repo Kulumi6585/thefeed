@@ -346,7 +346,7 @@ func (s *Server) initFetcher() error {
 		fetcher.SetRateLimit(cfg.RateLimit)
 	}
 
-	timeout := 5 * time.Second
+	timeout := 20 * time.Second
 	if cfg.Timeout > 0 {
 		timeout = time.Duration(cfg.Timeout * float64(time.Second))
 	}
