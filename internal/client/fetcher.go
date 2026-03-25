@@ -288,6 +288,9 @@ func (f *Fetcher) FetchBlock(ctx context.Context, channel, block uint16) ([]byte
 				lastErr = err
 				continue
 			}
+			if f.debug {
+				f.log("[debug] response ch=%d blk=%d len=%d", channel, block, len(data))
+			}
 			return data, nil
 		}
 		lastErr = fmt.Errorf("all resolvers failed: %w", lastErr)
