@@ -161,17 +161,17 @@ func (f *Fetcher) runRateLimiter(ctx context.Context) {
 	}
 }
 
-// runNoise sends decoy A-record queries to popular domains at a randomised
-// rate matching the configured QPS, to make feed traffic look like normal DNS usage.
+// runNoise sends decoy A-record queries to popular domains at a low rate
+// to make feed traffic blend into normal DNS usage without exhausting resolver limits.
 func (f *Fetcher) runNoise(ctx context.Context) {
-	interval := time.Duration(float64(time.Second) / f.rateQPS)
+	const baseInterval = 10 * time.Second
 	for {
-		// Random delay: 1–3× the query interval.
-		jitter := time.Duration(rand.Int63n(int64(2*interval) + 1))
+		// Random delay: 10–30 seconds.
+		jitter := time.Duration(rand.Int63n(int64(20 * time.Second)))
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(interval + jitter):
+		case <-time.After(baseInterval + jitter):
 		}
 
 		resolvers := f.Resolvers()
