@@ -11,7 +11,6 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import java.io.File
-import java.io.FileOutputStream
 import java.net.ServerSocket
 
 class ThefeedService : Service() {
@@ -64,7 +63,7 @@ class ThefeedService : Service() {
 
         Thread {
             try {
-                val bin = ensureBinary()
+                val bin = nativeBin()
                 val dataDir = File(filesDir, "thefeeddata")
                 if (!dataDir.exists()) dataDir.mkdirs()
 
@@ -103,66 +102,25 @@ class ThefeedService : Service() {
 
                 updateForegroundNotification("Running on http://127.0.0.1:$selectedPort")
             } catch (e: Exception) {
-                val detail = (e.message ?: e.javaClass.simpleName)
-                val abis = Build.SUPPORTED_ABIS.joinToString(",")
-                val hint = when {
-                    detail.contains("Permission denied", ignoreCase = true) ->
-                        "execution blocked by device policy"
-                    detail.contains("Exec format", ignoreCase = true) || detail.contains("error=8", ignoreCase = true) ->
-                        "ABI mismatch, device ABIs=$abis"
-                    detail.contains("No such file", ignoreCase = true) ->
-                        "binary missing in app assets"
-                    else -> detail
-                }
                 savePort(-1)
-                updateForegroundNotification("Failed: $hint")
+                updateForegroundNotification("Failed: ${e.message ?: e.javaClass.simpleName}")
             }
         }.start()
     }
 
-    private fun ensureBinary(): File {
-        val target = File(filesDir, "thefeed-client")
-        val selectedAsset = selectAssetByAbi()
-
-        // If already extracted and executable, verify it's still valid
-        if (target.exists() && target.length() > 0L && target.canExecute()) {
-            return target
+    /**
+     * The Go binary is packaged as libthefeed.so in jniLibs/ so the package
+     * installer places it in nativeLibraryDir — the only directory Android allows
+     * execution from (W^X policy blocks exec from filesDir on Android 10+).
+     */
+    private fun nativeBin(): File {
+        val bin = File(applicationInfo.nativeLibraryDir, "libthefeed.so")
+        if (!bin.exists()) {
+            throw IllegalStateException(
+                "Native binary missing — reinstall the app. Expected: ${bin.absolutePath}"
+            )
         }
-
-        // Extract fresh copy from assets
-        if (target.exists()) target.delete()
-
-        assets.open(selectedAsset).use { input ->
-            FileOutputStream(target).use { out ->
-                input.copyTo(out)
-            }
-        }
-
-        if (!target.setExecutable(true, true)) {
-            throw IllegalStateException("Could not set executable bit on bundled binary")
-        }
-
-        return target
-    }
-
-    private fun selectAssetByAbi(): String {
-        val list = assets.list("")?.toSet() ?: emptySet()
-        val abis = Build.SUPPORTED_ABIS.map { it.lowercase() }
-        for (abi in abis) {
-            val candidate = when (abi) {
-                "arm64-v8a" -> "thefeed-client-arm64"
-                "armeabi-v7a" -> "thefeed-client-armv7"
-                "x86_64" -> "thefeed-client-x86_64"
-                else -> null
-            }
-            if (candidate != null && list.contains(candidate)) {
-                return candidate
-            }
-        }
-        if (list.contains("thefeed-client")) {
-            return "thefeed-client"
-        }
-        throw IllegalStateException("No compatible binary in assets (device ABIs=${Build.SUPPORTED_ABIS.joinToString(",")})")
+        return bin
     }
 
     private fun findFreePort(): Int {

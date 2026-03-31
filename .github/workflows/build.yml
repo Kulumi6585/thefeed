@@ -104,12 +104,13 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Stage Android client binary into assets
+      - name: Stage Android client binary as JNI library
         run: |
           test -f artifacts/thefeed-client-android-arm64
-          mkdir -p android/app/src/main/assets
-          cp artifacts/thefeed-client-android-arm64 android/app/src/main/assets/thefeed-client-arm64
-          chmod +x android/app/src/main/assets/thefeed-client-arm64
+          # Package binary as .so in jniLibs so the installer places it in
+          # nativeLibraryDir – the only Android-permitted exec location (W^X policy).
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          cp artifacts/thefeed-client-android-arm64 android/app/src/main/jniLibs/arm64-v8a/libthefeed.so
 
       - name: Decode signing keystore
         if: env.KEYSTORE_BASE64 != ''
