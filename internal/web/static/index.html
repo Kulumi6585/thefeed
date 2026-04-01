@@ -539,9 +539,9 @@
             <div class="log-panel-wrapper">
                 <div class="log-panel-header" onclick="toggleLog()">
                     <span>LOG</span>
-                    <span class="log-toggle-icon" id="logToggleIcon">▼</span>
+                    <span class="log-toggle-icon" id="logToggleIcon">▶</span>
                 </div>
-                <div class="log-panel" id="logPanel"></div>
+                <div class="log-panel hidden" id="logPanel"></div>
             </div>
         </div>
     </div>
@@ -620,7 +620,7 @@
         var eventSource = null;
         var autoRefreshTimer = null;
         var telegramLoggedIn = false;
-        var logVisible = true;
+        var logVisible = false;
 
         var serverNextFetch = 0;
         var nextFetchInterval = null;
