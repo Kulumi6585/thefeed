@@ -17,12 +17,14 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private lateinit var txtStatus: TextView
     private val handler = Handler(Looper.getMainLooper())
-    private var retryCount = 0
+    private var probeAttempt = 0
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -38,8 +40,8 @@ class MainActivity : ComponentActivity() {
         requestNotificationPermission()
         configureWebView()
         startThefeedService()
-        retryCount = 0
-        loadLocalWebWithRetry()
+        probeAttempt = 0
+        waitForServerThenLoad()
     }
 
     private fun requestNotificationPermission() {
@@ -66,7 +68,6 @@ class MainActivity : ComponentActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 if (url != null && url.startsWith("http://127.0.0.1")) {
                     txtStatus.text = ""
-                    retryCount = 0
                 }
             }
 
@@ -75,12 +76,11 @@ class MainActivity : ComponentActivity() {
                 request: WebResourceRequest?,
                 error: WebResourceError?
             ) {
-                if (request?.isForMainFrame == true && retryCount < MAX_RETRIES) {
-                    retryCount++
-                    txtStatus.text = "Waiting for service to start... (attempt $retryCount)"
-                    handler.postDelayed({ loadLocalWebWithRetry() }, RETRY_DELAY_MS)
-                } else if (retryCount >= MAX_RETRIES) {
-                    txtStatus.text = "Could not connect. Tap Reload to try again."
+                // Server was reachable during probe but dropped connection — retry probe cycle
+                if (request?.isForMainFrame == true) {
+                    probeAttempt = 0
+                    txtStatus.text = "Reconnecting..."
+                    handler.postDelayed({ waitForServerThenLoad() }, RETRY_DELAY_MS)
                 }
             }
         }
@@ -95,24 +95,60 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun loadLocalWebWithRetry() {
+    /**
+     * Polls the server in a background thread until it responds with HTTP 200 (or any
+     * response — a TCP connection refused is what we're avoiding). Only then hands the
+     * URL to WebView, ensuring it never shows a browser error page on startup.
+     */
+    private fun waitForServerThenLoad() {
         val port = getCurrentPort()
         if (port <= 0) {
-            if (retryCount < MAX_RETRIES) {
-                retryCount++
-                txtStatus.text = "Waiting for service port... (attempt $retryCount)"
-                handler.postDelayed({ loadLocalWebWithRetry() }, RETRY_DELAY_MS)
+            if (probeAttempt < MAX_PROBE_ATTEMPTS) {
+                probeAttempt++
+                txtStatus.text = "Waiting for service... ($probeAttempt/$MAX_PROBE_ATTEMPTS)"
+                handler.postDelayed({ waitForServerThenLoad() }, PROBE_INTERVAL_MS)
             } else {
-                txtStatus.text = "Service port unavailable. Tap Reload."
+                txtStatus.text = "Service unavailable. Restart the app."
             }
             return
         }
 
         val url = "http://127.0.0.1:$port"
-        txtStatus.text = "Loading $url ..."
-        // Give the Go binary time to bind the port on first launch
-        val delay = if (retryCount == 0) INITIAL_DELAY_MS else 0L
-        handler.postDelayed({ webView.loadUrl(url) }, delay)
+        txtStatus.text = "Connecting..."
+
+        Thread {
+            var ready = false
+            repeat(MAX_PROBE_ATTEMPTS) { attempt ->
+                if (ready) return@repeat
+                try {
+                    val conn = URL(url).openConnection() as HttpURLConnection
+                    conn.connectTimeout = PROBE_TIMEOUT_MS.toInt()
+                    conn.readTimeout = PROBE_TIMEOUT_MS.toInt()
+                    conn.requestMethod = "GET"
+                    val code = conn.responseCode
+                    conn.disconnect()
+                    if (code > 0) {      // any HTTP response means the server is up
+                        ready = true
+                        return@repeat
+                    }
+                } catch (_: Exception) {
+                    // Connection refused or timeout — server not ready yet
+                }
+                Thread.sleep(PROBE_INTERVAL_MS)
+                handler.post {
+                    txtStatus.text = "Waiting for server... (${attempt + 1}/$MAX_PROBE_ATTEMPTS)"
+                }
+            }
+
+            handler.post {
+                if (ready) {
+                    txtStatus.text = ""
+                    webView.loadUrl(url)
+                } else {
+                    txtStatus.text = "Could not connect. Restart the app."
+                }
+            }
+        }.start()
     }
 
     private fun getCurrentPort(): Int {
@@ -127,8 +163,10 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
-        private const val MAX_RETRIES = 25
-        private const val RETRY_DELAY_MS = 10000L
-        private const val INITIAL_DELAY_MS = 15000L
+        private const val MAX_PROBE_ATTEMPTS = 30
+        private const val PROBE_INTERVAL_MS = 1000L   // 1s between probes → up to 30s total
+        private const val PROBE_TIMEOUT_MS  = 1000L   // 1s HTTP connect timeout per probe
+        private const val RETRY_DELAY_MS    = 2000L   // delay before restarting probe cycle on error
     }
 }
+
