@@ -37,14 +37,19 @@ android {
         // For CI: override with env vars KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
         release {
             def ksFile = file("keystore.jks")
-            def ksBase64 = System.getenv("KEYSTORE_BASE64")
-            if (ksBase64) {
-                ksFile.bytes = Base64.decoder.decode(ksBase64)
+            if (ksFile.exists()) {
+                storeFile ksFile
+                storePassword System.getenv("KEYSTORE_PASSWORD") ?: "thefeed123"
+                keyAlias System.getenv("KEY_ALIAS") ?: "thefeed"
+                keyPassword System.getenv("KEY_PASSWORD") ?: "thefeed123"
+            } else {
+                // Fallback to debug keystore for consistent local/CI builds without the project keystore
+                def debugKs = new File(System.getProperty("user.home"), ".android/debug.keystore")
+                storeFile debugKs
+                storePassword "android"
+                keyAlias "androiddebugkey"
+                keyPassword "android"
             }
-            storeFile ksFile
-            storePassword System.getenv("KEYSTORE_PASSWORD") ?: "thefeed123"
-            keyAlias System.getenv("KEY_ALIAS") ?: "thefeed"
-            keyPassword System.getenv("KEY_PASSWORD") ?: "thefeed123"
         }
     }
 

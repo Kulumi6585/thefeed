@@ -115,11 +115,15 @@ jobs:
           cp artifacts/thefeed-client-android-arm64 android/app/src/main/jniLibs/arm64-v8a/libthefeed.so
 
       - name: Decode signing keystore
-        if: env.KEYSTORE_BASE64 != ''
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > android/app/keystore.jks
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > android/app/keystore.jks
+            echo "Keystore decoded successfully"
+          else
+            echo "No KEYSTORE_BASE64 secret set — will use debug signing"
+          fi
 
       - name: Set up Java
         uses: actions/setup-java@v4
