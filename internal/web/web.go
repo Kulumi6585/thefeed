@@ -126,6 +126,20 @@ func New(dataDir string, port int, password string) (*Server, error) {
 		if err := s.initFetcher(); err != nil {
 			log.Printf("Warning: could not initialize fetcher: %v", err)
 		}
+	} else {
+		// config.json missing — try to bootstrap from the active profile
+		if pl, plErr := s.loadProfiles(); plErr == nil && pl.Active != "" {
+			for _, p := range pl.Profiles {
+				if p.ID == pl.Active {
+					_ = s.saveConfig(&p.Config)
+					s.config = &p.Config
+					if err := s.initFetcher(); err != nil {
+						log.Printf("Warning: could not initialize fetcher from profile: %v", err)
+					}
+					break
+				}
+			}
+		}
 	}
 
 	return s, nil
@@ -143,12 +157,14 @@ func (s *Server) Run() error {
 	mux.HandleFunc("/api/channels", s.handleChannels)
 	mux.HandleFunc("/api/messages/", s.handleMessages)
 	mux.HandleFunc("/api/refresh", s.handleRefresh)
+	mux.HandleFunc("/api/rescan", s.handleRescan)
 	mux.HandleFunc("/api/send", s.handleSend)
 	mux.HandleFunc("/api/admin", s.handleAdmin)
 	mux.HandleFunc("/api/events", s.handleSSE)
 	mux.HandleFunc("/api/profiles", s.handleProfiles)
 	mux.HandleFunc("/api/profiles/switch", s.handleProfileSwitch)
 	mux.HandleFunc("/api/settings", s.handleSettings)
+	mux.HandleFunc("/api/cache/clear", s.handleClearCache)
 	mux.HandleFunc("/", s.handleIndex)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", s.port)
@@ -311,6 +327,27 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	} else {
 		go s.refreshMetadataOnly()
 	}
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func (s *Server) handleRescan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	s.mu.RLock()
+	checker := s.checker
+	baseCtx := s.fetcherCtx
+	s.mu.RUnlock()
+	if checker == nil || baseCtx == nil {
+		http.Error(w, "not configured", 400)
+		return
+	}
+	go func() {
+		if checker.CheckNow(baseCtx) {
+			s.refreshMetadataOnly()
+		}
+	}()
 	writeJSON(w, map[string]any{"ok": true})
 }
 
@@ -512,6 +549,7 @@ func (s *Server) initFetcher() error {
 	defer s.mu.Unlock()
 
 	// Cancel goroutines from the previous fetcher configuration.
+	// This also cancels any in-progress manual rescan (via the context chain).
 	if s.fetcherCancel != nil {
 		s.fetcherCancel()
 	}
@@ -1002,6 +1040,8 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 			pl = &ProfileList{}
 		}
 
+		needsReinit := false
+
 		switch req.Action {
 		case "create":
 			req.Profile.ID = generateID()
@@ -1011,12 +1051,16 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 			pl.Profiles = append(pl.Profiles, req.Profile)
 			if len(pl.Profiles) == 1 {
 				pl.Active = req.Profile.ID
+				needsReinit = true
 			}
 
 		case "update":
 			for i, p := range pl.Profiles {
 				if p.ID == req.Profile.ID {
 					pl.Profiles[i] = req.Profile
+					if p.ID == pl.Active {
+						needsReinit = true
+					}
 					break
 				}
 			}
@@ -1029,6 +1073,7 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 						pl.Active = ""
 						if len(pl.Profiles) > 0 {
 							pl.Active = pl.Profiles[0].ID
+							needsReinit = true
 						}
 					}
 					break
@@ -1060,8 +1105,8 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// If active profile changed, update config.json and re-init the fetcher.
-		if pl.Active != "" {
+		// Only re-init the fetcher when the active profile's config was modified.
+		if needsReinit && pl.Active != "" {
 			for _, p := range pl.Profiles {
 				if p.ID == pl.Active {
 					_ = s.saveConfig(&p.Config)
@@ -1188,4 +1233,28 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", 405)
 	}
+}
+
+// handleClearCache deletes all files in the cache directory.
+func (s *Server) handleClearCache(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	cacheDir := filepath.Join(s.dataDir, "cache")
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		writeJSON(w, map[string]any{"ok": true, "deleted": 0})
+		return
+	}
+	deleted := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			if os.Remove(filepath.Join(cacheDir, e.Name())) == nil {
+				deleted++
+			}
+		}
+	}
+	s.addLog(fmt.Sprintf("Cache cleared: %d files deleted", deleted))
+	writeJSON(w, map[string]any{"ok": true, "deleted": deleted})
 }

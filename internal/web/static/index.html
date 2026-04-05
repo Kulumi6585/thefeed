@@ -29,7 +29,8 @@ input,textarea,select{font-family:inherit}
 .profile-btn:hover{background:var(--hover)}
 .profile-btn-avatar{width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .profile-btn-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.profile-btn-arrow{font-size:10px;color:var(--text-dim);flex-shrink:0}
+.profile-btn-arrow{font-size:10px;color:var(--text-dim);flex-shrink:0;display:flex;align-items:center;gap:2px}
+.profile-btn-arrow .plus{font-size:16px;font-weight:700;color:var(--accent)}
 .sidebar-search{padding:7px 12px;border:none;border-radius:18px;background:var(--surface);color:var(--text);font-size:13px;outline:none;width:100%}
 .sidebar-search::placeholder{color:var(--text-dim)}
 .icon-btn{width:36px;height:36px;border:none;background:none;color:var(--text-dim);font-size:17px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
@@ -38,7 +39,7 @@ input,textarea,select{font-family:inherit}
 /* ===== CHANNEL LIST ===== */
 .channel-list{flex:1;overflow-y:auto}
 .channel-section-title{padding:8px 14px 4px;font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px}
-.ch-item{display:flex;align-items:center;padding:10px 14px;cursor:pointer;transition:background .1s;gap:10px}
+.ch-item{display:flex;align-items:center;padding:10px 14px;cursor:pointer;gap:10px;contain:content}
 .ch-item:hover{background:var(--hover)}
 .ch-item.active{background:var(--accent)}
 .ch-item.active .ch-name,.ch-item.active .ch-preview{color:#fff}
@@ -75,6 +76,8 @@ input,textarea,select{font-family:inherit}
 .messages{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:4px;direction:ltr}
 .msg-date-sep{text-align:center;padding:8px 0;font-size:12px;color:var(--text-dim)}
 .msg-date-sep span{background:rgba(0,0,0,.3);padding:3px 10px;border-radius:10px}
+.msg-gap-sep{text-align:center;padding:6px 0;font-size:11px;color:var(--error)}
+.msg-gap-sep span{background:rgba(229,57,53,.12);padding:3px 10px;border-radius:10px;border:1px dashed rgba(229,57,53,.3)}
 .msg{max-width:min(82%,580px);padding:7px 10px 4px;border-radius:12px;line-height:1.7;word-break:break-word;white-space:pre-wrap;font-size:inherit;background:var(--msg-in);border:1px solid rgba(255,255,255,.07);align-self:flex-start;border-bottom-left-radius:4px}
 .msg-meta{display:flex;justify-content:flex-end;gap:6px;font-size:10px;color:var(--text-dim);margin-top:2px;direction:ltr}
 .media-tag{display:block;padding:2px 6px;border-radius:4px;background:rgba(51,144,236,.15);color:var(--accent);font-size:11px;margin-bottom:6px}
@@ -96,7 +99,10 @@ input,textarea,select{font-family:inherit}
 .progress-bar{width:100%;height:3px;background:var(--border);border-radius:2px;overflow:hidden}
 .progress-fill{height:100%;background:var(--accent);transition:width .2s}
 @keyframes prog-pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.msg-copy-btn{background:none;border:none;color:var(--text-dim);font-size:11px;cursor:pointer;padding:0 2px;opacity:0;transition:opacity .15s;line-height:1;flex-shrink:0}.msg:hover .msg-copy-btn{opacity:1}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes badge-pulse{0%,100%{box-shadow:0 0 0 0 rgba(51,144,236,.4)}50%{box-shadow:0 0 0 4px rgba(51,144,236,0)}}
+.refresh-has-new{animation:badge-pulse 2s ease-in-out infinite;color:var(--accent)!important}
+.msg-copy-btn{background:none;border:none;color:var(--text-dim);font-size:14px;cursor:pointer;padding:0 3px;line-height:1;flex-shrink:0;opacity:.45;transition:opacity .15s}.msg-copy-btn:hover{opacity:1}
 
 /* ===== LOG ===== */
 .log-toggle{display:flex;align-items:center;justify-content:space-between;padding:3px 14px;background:var(--bg2);cursor:pointer;user-select:none;font-size:10px;color:var(--text-dim);letter-spacing:.5px;border-top:1px solid var(--border)}
@@ -214,7 +220,7 @@ html[dir=ltr] .active-badge{margin-left:0;margin-right:6px}
         <button class="profile-btn" id="profileBtn" onclick="openProfiles()">
           <div class="profile-btn-avatar" id="profileBtnAvatar">?</div>
           <span class="profile-btn-name" id="profileBtnName" data-i18n="set_up">Set Up</span>
-          <span class="profile-btn-arrow">&#9660;</span>
+          <span class="profile-btn-arrow"><span class="plus">+</span>&#9660;</span>
         </button>
         <button class="icon-btn" onclick="openSettings()" title="Settings" data-i18n-title="settings">&#9881;</button>
         <button class="icon-btn" onclick="jumpToLog()" title="LOG">&#128220;</button>
@@ -240,7 +246,7 @@ html[dir=ltr] .active-badge{margin-left:0;margin-right:6px}
       </div>
       <div class="chat-header-actions">
         <span class="next-fetch-label" id="nextFetchTimer"></span><span class="next-fetch-info" id="nextFetchInfoBtn" style="display:none" data-i18n-title="next_fetch_info" title="" onclick="showToast(t('next_fetch_info'))" tabindex="0">ⓘ</span>
-        <button class="icon-btn" onclick="doRefresh()" title="Refresh">&#8635;</button>
+        <button class="icon-btn" id="refreshBtn" onclick="doRefreshUI()" title="Refresh" style="width:40px;height:40px;font-size:20px">&#8635;</button>
       </div>
     </div>
     <div class="messages" id="messages">
@@ -289,6 +295,10 @@ html[dir=ltr] .active-badge{margin-left:0;margin-right:6px}
     <span data-i18n="version">Version</span>
     <span id="appVersionEl" style="font-family:monospace;color:var(--text)">-</span>
   </div>
+  <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between">
+    <span style="font-size:12px;color:var(--text-dim)" data-i18n="clear_cache">Clear Cache</span>
+    <button class="btn btn-flat" onclick="clearCache()" style="font-size:11px;padding:4px 12px;color:var(--danger,#e74c3c)" data-i18n="clear_cache">Clear Cache</button>
+  </div>
   <div class="modal-actions">
     <button class="btn btn-flat" onclick="closeSettings()" data-i18n="cancel">Cancel</button>
     <button class="btn btn-primary" onclick="saveSettings()" data-i18n="save">Save</button>
@@ -300,9 +310,8 @@ html[dir=ltr] .active-badge{margin-left:0;margin-right:6px}
 <div class="modal-overlay" id="profilesModal">
 <div class="modal">
   <h2 data-i18n="profiles">Profiles</h2>
-  <div id="profilesListEl"></div>
-  <!-- Import URI -->
-  <div class="import-section">
+  <!-- Import URI at top -->
+  <div class="import-section" style="margin-top:0;margin-bottom:14px;padding:10px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">
     <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px" data-i18n="import_uri_label">Import URI</div>
     <div class="import-row">
       <input id="importUriInput" placeholder="thefeed://..." data-i18n-ph="import_uri_ph">
@@ -311,9 +320,10 @@ html[dir=ltr] .active-badge{margin-left:0;margin-right:6px}
     <div id="importError" style="color:var(--error);font-size:12px;display:none;margin-top:6px"></div>
     <div id="importSuccess" style="color:var(--success);font-size:12px;display:none;margin-top:6px"></div>
   </div>
+  <div id="profilesListEl"></div>
   <div class="modal-actions">
     <button class="btn btn-flat" onclick="closeProfiles()" data-i18n="close">Close</button>
-    <button class="btn btn-primary" onclick="openProfileEditor(null)" data-i18n="add_profile">+ Add Profile</button>
+    <button class="btn btn-outline" onclick="openProfileEditor(null)" data-i18n="add_manual">✎ Create Manually</button>
   </div>
 </div>
 </div>
@@ -384,8 +394,13 @@ var I18N = {
     channel_placeholder:'نام کاربری کانال',
     version:'نسخه',
     edit:'ویرایش',share:'اشتراک\u200cگذاری',delete:'حذف',save:'ذخیره',cancel:'لغو',
-    copied:'پیوند کپی شد!',copy:'کپی',active:'فعال',
+    copied:'کپی شد!',copy:'کپی',active:'فعال',
     private:'خصوصی',no_config:'ابتدا پروفایل را ذخیره کنید',
+    refreshing:'در حال بروزرسانی...',fetching_channel:'در حال دریافت کانال...',
+    msg_copied:'پیام کپی شد!',rescan_started:'بررسی مجدد شروع شد',
+    add_manual:'✎ ساخت دستی',rescan:'بررسی مجدد',
+    new_messages:'پیام جدید',missed_messages:'{n} پیام از دست رفته یا حذف شده',
+    clear_cache:'پاک کردن کش',cache_cleared:'کش پاک شد!',
   },
   en: {
     search:'Search...',settings:'Settings',profiles:'Profiles',
@@ -415,6 +430,11 @@ var I18N = {
     edit:'Edit',share:'Share',delete:'Delete',save:'Save',cancel:'Cancel',
     copied:'URI copied!',copy:'Copy',active:'Active',
     private:'Private',no_config:'Save a profile first',
+    refreshing:'Refreshing...',fetching_channel:'Fetching channel...',
+    msg_copied:'Message copied!',rescan_started:'Rescan started',
+    add_manual:'✎ Create Manually',rescan:'Rescan',
+    new_messages:'New messages',missed_messages:'{n} messages missed or deleted',
+    clear_cache:'Clear Cache',cache_cleared:'Cache cleared!',
   }
 };
 var lang = localStorage.getItem('thefeed_lang') || 'fa';
@@ -454,11 +474,11 @@ async function init(){
   connectSSE();
   try{
     var r=await fetch('/api/status');var st=await r.json();
+    await loadProfiles();
     if(!st.configured){openProfiles();return}
     telegramLoggedIn=!!st.telegramLoggedIn;
     serverNextFetch=st.nextFetch||0;
     updateNextFetchDisplay();
-    await loadProfiles();
     await loadChannels();
     if(channels&&channels.length>0)await selectChannel(1);
     else{showInitProgress();await doRefresh();openChat()}
@@ -490,10 +510,16 @@ async function saveSettings(){
   try{await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fontSize:fs,debug:dbg})})}catch(e){}
   closeSettings();
 }
+async function clearCache(){
+  try{var r=await fetch('/api/cache/clear',{method:'POST'});var j=await r.json();if(j.ok){alert(t('cache_cleared'))}}catch(e){}
+}
 
 // ===== SSE =====
 function connectSSE(){
   if(eventSource)eventSource.close();
+  // Clear stale progress items from a previous connection
+  document.getElementById('progressPanel').innerHTML='';
+  resolverScanHint='';
   eventSource=new EventSource('/api/events');
   eventSource.addEventListener('log',function(e){addLogLine(JSON.parse(e.data))});
   eventSource.addEventListener('update',async function(e){
@@ -570,6 +596,7 @@ function renderProfilesModal(){
     if(isActive)h+='<span class="active-badge">'+t('active')+'</span>';
     h+='</div><div class="profile-row-domain">'+esc(p.config.domain)+'</div></div>';
     h+='<div class="profile-row-btns">';
+    if(isActive)h+='<button class="btn btn-flat btn-sm" onclick="event.stopPropagation();doRescanFromProfiles()" title="'+t('rescan')+'" style="color:var(--success)">&#128260;</button>';
     h+='<button class="btn btn-flat btn-sm" onclick="event.stopPropagation();toggleSharePanel(\''+p.id+'\')" title="'+t('share')+'">&#128279;</button>';
     h+='<button class="btn btn-flat btn-sm" onclick="event.stopPropagation();openProfileEditor(\''+p.id+'\')" title="'+t('edit')+'">&#9998;</button>';
     h+='</div></div>';
@@ -738,6 +765,7 @@ async function saveProfile(){
     var r=await fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action,profile:profile})});
     if(!r.ok){errEl.textContent=await r.text();errEl.style.display='block';return}
     await loadProfiles();
+    var savedEditId=editingProfileId;
     closeProfileEditor();
     if(wasFirst){
       closeProfiles();
@@ -746,13 +774,26 @@ async function saveProfile(){
       showInitProgress();
     }else{
       renderProfilesModal();
-      // If we updated the active profile, reload data
-      if(editingProfileId===activeProfileId||!editingProfileId){
+      // Only rescan if we updated the currently active profile
+      if(savedEditId&&savedEditId===activeProfileId){
+        showToast(t('rescan_started'));
+        document.getElementById('progressPanel').innerHTML='';
+        showInitProgress();
         await loadChannels();
         if(selectedChannel>0)await loadMessages(selectedChannel);
       }
     }
   }catch(e){errEl.textContent=e.message;errEl.style.display='block'}
+}
+
+// ===== RESCAN =====
+async function doRescanFromProfiles(){
+  closeProfiles();
+  showToast(t('rescan_started'));
+  document.getElementById('progressPanel').innerHTML='';
+  showInitProgress();
+  try{await fetch('/api/rescan',{method:'POST'})}catch(e){}
+  setTimeout(function(){loadChannels().then(function(){if(selectedChannel>0)loadMessages(selectedChannel)})},3000);
 }
 
 async function deleteEditingProfile(){
@@ -790,11 +831,38 @@ async function loadChannels(){
   }catch(e){}
 }
 
+var _renderChannelsTimer=null;
 function renderChannels(){
+  // Debounce: avoid rapid sequential DOM rebuilds that cause hover flicker
+  if(_renderChannelsTimer)clearTimeout(_renderChannelsTimer);
+  _renderChannelsTimer=setTimeout(_renderChannelsNow,50);
+}
+function _renderChannelsNow(){
+  _renderChannelsTimer=null;
   var el=document.getElementById('channelList');
   if(!channels||!channels.length){
     var _hint=resolverScanHint||(t('no_channels_hint')+' <button onclick="jumpToLog()" style="background:none;border:none;cursor:pointer;font-size:13px;vertical-align:middle;padding:0 2px">&#128220;</button> '+t('no_channels_hint2'));
     el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:13px">'+t('no_channels')+'<br><span id="no-ch-hint" style="font-size:11px;opacity:.7;line-height:1.8">'+_hint+'</span></div>';return
+  }
+  // Fast-path: if channel count matches existing items, just update classes/badges
+  var existingItems=el.querySelectorAll('.ch-item');
+  if(existingItems.length===channels.length){
+    var needsFullRebuild=false;
+    for(var ci=0;ci<channels.length;ci++){
+      var ch=channels[ci],nm=ch.Name||ch.name||'Channel '+(ci+1);
+      if(existingItems[ci].dataset.name!==nm){needsFullRebuild=true;break}
+    }
+    if(!needsFullRebuild){
+      for(var ui=0;ui<channels.length;ui++){
+        var num=ui+1;
+        existingItems[ui].classList.toggle('active',num===selectedChannel);
+        var lastID=channels[ui].LastMsgID||channels[ui].lastMsgID||0;
+        var showBadge=previousMsgIDs[num]>0&&lastID>previousMsgIDs[num]&&num!==selectedChannel;
+        var previewEl=existingItems[ui].querySelector('.ch-preview');
+        if(previewEl)previewEl.innerHTML=showBadge?'<span class="ch-badge">NEW</span>':'';
+      }
+      _updateRefreshBadge();return;
+    }
   }
   var pubs=[],privs=[];
   for(var i=0;i<channels.length;i++){var c=channels[i];(c.ChatType===1||c.chatType===1?privs:pubs).push({ch:c,idx:i})}
@@ -802,13 +870,13 @@ function renderChannels(){
     if(!items.length)return'';var h='';
     if(title)h+='<div class="channel-section-title">'+esc(title)+'</div>';
     for(var j=0;j<items.length;j++){
-      var e=items[j],num=e.idx+1;
-      var name=e.ch.Name||e.ch.name||'Channel '+num;
+      var e=items[j],num2=e.idx+1;
+      var name=e.ch.Name||e.ch.name||'Channel '+num2;
       var isPriv=e.ch.ChatType===1||e.ch.chatType===1;
-      var active=num===selectedChannel?' active':'';
+      var active=num2===selectedChannel?' active':'';
       var lastID=e.ch.LastMsgID||e.ch.lastMsgID||0;
-      var badge=(previousMsgIDs[num]>0&&lastID>previousMsgIDs[num]&&num!==selectedChannel)?'<span class="ch-badge">NEW</span>':'';
-      h+='<div class="ch-item'+active+'" data-name="'+esc(name)+'" onclick="selectChannel('+num+')">';
+      var badge=(previousMsgIDs[num2]>0&&lastID>previousMsgIDs[num2]&&num2!==selectedChannel)?'<span class="ch-badge">NEW</span>':'';
+      h+='<div class="ch-item'+active+'" data-name="'+esc(name)+'" onclick="selectChannel('+num2+')">';
       h+='<div class="ch-avatar">'+esc(name.charAt(0).toUpperCase())+'</div>';
       h+='<div class="ch-info"><div class="ch-name">'+esc(name)+(isPriv?'<span class="ch-type-tag">'+t('private')+'</span>':'')+'</div>';
       h+='<div class="ch-preview">'+badge+'</div></div></div>';
@@ -816,6 +884,15 @@ function renderChannels(){
     return h;
   }
   el.innerHTML=section('',pubs)+section(t('private'),privs);
+  _updateRefreshBadge();
+}
+function _updateRefreshBadge(){
+  var hasNew=false;
+  for(var k=0;k<channels.length;k++){
+    var num3=k+1,lid=channels[k].LastMsgID||channels[k].lastMsgID||0;
+    if(previousMsgIDs[num3]>0&&lid>previousMsgIDs[num3]&&num3!==selectedChannel){hasNew=true;break}
+  }
+  document.getElementById('refreshBtn').classList.toggle('refresh-has-new',hasNew);
 }
 
 async function selectChannel(num){
@@ -825,8 +902,23 @@ async function selectChannel(num){
   document.getElementById('chatName').textContent=name;
   renderChannels();updateSendPanel();
   document.getElementById('messages').innerHTML='<div class="empty-state"><p>'+t('loading')+'</p></div>';
+  // Show immediate feedback progress bar
+  showChannelFetchProgress(num,name);
   await loadMessages(num);
   await doRefresh(true);
+}
+
+function showChannelFetchProgress(num,name){
+  var panel=document.getElementById('progressPanel');
+  var id='prog-fetch-ch-'+num;
+  var existing=document.getElementById(id);
+  if(existing)return;
+  var item=document.createElement('div');item.id=id;item.className='progress-item';
+  item.dataset.lastUpdate=Date.now();
+  item.innerHTML='<button class="progress-close" onclick="this.parentNode.remove()" title="Dismiss">&times;</button><div class="progress-label">'+t('fetching_channel')+' '+(name||num)+'</div><div class="progress-bar"><div class="progress-fill" style="width:40%;animation:prog-pulse 1.5s ease-in-out infinite"></div></div>';
+  panel.insertBefore(item,panel.firstChild);
+  // Auto-remove after messages load or after timeout
+  setTimeout(function(){var el=document.getElementById(id);if(el)el.remove()},15000);
 }
 
 function updateSendPanel(){
@@ -837,13 +929,46 @@ function updateSendPanel(){
   else panel.classList.remove('visible');
 }
 
+// ===== PERSISTENT MESSAGE STORE =====
+function msgStoreKey(chNum){return 'thefeed_msgs_'+activeProfileId+'_'+chNum}
+function loadStoredMessages(chNum){
+  try{var raw=localStorage.getItem(msgStoreKey(chNum));return raw?JSON.parse(raw):[]}catch(e){return[]}
+}
+function saveStoredMessages(chNum,msgs){
+  try{
+    // Keep max 200 messages, sorted by timestamp
+    msgs.sort(function(a,b){return(a.Timestamp||a.timestamp||0)-(b.Timestamp||b.timestamp||0)});
+    if(msgs.length>200)msgs=msgs.slice(msgs.length-200);
+    localStorage.setItem(msgStoreKey(chNum),JSON.stringify(msgs));
+  }catch(e){}
+}
+function mergeMessages(stored,fresh){
+  var byId={};var merged=[];
+  for(var i=0;i<stored.length;i++){var id=stored[i].ID||stored[i].id;if(id){byId[id]=true;merged.push(stored[i])}}
+  for(var j=0;j<fresh.length;j++){var id2=fresh[j].ID||fresh[j].id;if(id2&&!byId[id2]){merged.push(fresh[j])}}
+  merged.sort(function(a,b){return(a.Timestamp||a.timestamp||0)-(b.Timestamp||b.timestamp||0)});
+  if(merged.length>200)merged=merged.slice(merged.length-200);
+  return merged;
+}
+
 // ===== MESSAGES =====
 async function loadMessages(chNum){
-  if(chNum===selectedChannel){var _c=loadCache();if(_c&&_c.messages&&_c.messages[''+chNum])renderMessages(_c.messages[''+chNum]);}
+  if(chNum===selectedChannel){
+    // Show persisted messages immediately
+    var stored=loadStoredMessages(chNum);
+    if(stored.length)renderMessages(stored);
+    else{var _c=loadCache();if(_c&&_c.messages&&_c.messages[''+chNum])renderMessages(_c.messages[''+chNum])}
+  }
   try{
     var r=await fetch('/api/messages/'+chNum);if(chNum!==selectedChannel)return;
     var msgs=await r.json();if(chNum!==selectedChannel)return;
-    renderMessages(msgs);
+    // Merge with stored messages
+    var stored2=loadStoredMessages(chNum);
+    var merged=mergeMessages(stored2,msgs||[]);
+    saveStoredMessages(chNum,merged);
+    renderMessages(merged);
+    // Remove fetch progress bar for this channel
+    var fetchBar=document.getElementById('prog-fetch-ch-'+chNum);if(fetchBar)fetchBar.remove();
     var _cache=loadCache()||{channels:channels,messages:{}};if(!_cache.messages)_cache.messages={};_cache.messages[''+chNum]=msgs;_cache.ts=Date.now();saveCache(_cache);
     if(channels[chNum-1]){previousMsgIDs[chNum]=channels[chNum-1].LastMsgID||channels[chNum-1].lastMsgID||0;renderChannels()}
   }catch(e){}
@@ -852,17 +977,35 @@ async function loadMessages(chNum){
 function renderMessages(msgs){
   var el=document.getElementById('messages');
   if(!msgs||!msgs.length){el.innerHTML='<div class="empty-state"><p>'+t('no_messages')+'</p><p style="font-size:12px;opacity:.6;margin-top:6px">'+t('no_messages_hint')+'</p></div>';return}
+  // Check if user is near the bottom before re-render (within 150px)
+  var wasAtBottom=el.scrollHeight-el.scrollTop-el.clientHeight<150;
+  var isFirstRender=el.querySelector('.empty-state')!==null||el.querySelector('.msg')===null;
   msgs.sort(function(a,b){return(a.Timestamp||a.timestamp||0)-(b.Timestamp||b.timestamp||0)});
-  var html='',lastDate='';
+  var html='',lastDate='',prevId=0;
+  currentMsgTexts=[];
   var dateLocale=lang==='fa'?'fa-IR':'en-US';
+  var dateOpts=lang==='fa'?{year:'numeric',month:'long',day:'numeric',calendar:'persian'}:{year:'numeric',month:'long',day:'numeric'};
   for(var i=0;i<msgs.length;i++){
     var msg=msgs[i];
-    var ts=new Date((msg.Timestamp||msg.timestamp)*1000);
-    var dateStr=ts.toLocaleDateString(dateLocale,{year:'numeric',month:'long',day:'numeric'});
-    if(dateStr!==lastDate){html+='<div class="msg-date-sep"><span>'+dateStr+'</span></div>';lastDate=dateStr}
-    var timeStr=ts.toLocaleTimeString(dateLocale,{hour:'2-digit',minute:'2-digit'});
     var id=msg.ID||msg.id;
+    // Gap detection: only show if IDs are close enough to be meaningful
+    // Telegram IDs can have natural gaps; only flag when we have stored history
+    // and the gap is between messages we've seen before vs new ones
+    if(prevId>0&&id>prevId+1){
+      var gap=id-prevId-1;
+      // Only show gap separator for small-ish gaps (likely real missed messages)
+      // and only when we have more than just a few messages (initial fetch won't trigger)
+      if(gap<=500&&msgs.length>=10){
+        html+='<div class="msg-gap-sep"><span>'+t('missed_messages').replace('{n}',gap)+'</span></div>';
+      }
+    }
+    prevId=id;
+    var ts=new Date((msg.Timestamp||msg.timestamp)*1000);
+    var dateStr=ts.toLocaleDateString(dateLocale,dateOpts);
+    if(dateStr!==lastDate){html+='<div class="msg-date-sep"><span dir="auto">'+dateStr+'</span></div>';lastDate=dateStr}
+    var timeStr=ts.toLocaleTimeString(dateLocale,{hour:'2-digit',minute:'2-digit'});
     var text=msg.Text||msg.text||'';
+    currentMsgTexts.push(text);
     var mediaHtml='',textHtml=esc(text);
     var mediaTypes=['[IMAGE]','[VIDEO]','[FILE]','[AUDIO]','[STICKER]','[GIF]','[POLL]','[CONTACT]','[LOCATION]'];
     for(var m=0;m<mediaTypes.length;m++){
@@ -871,9 +1014,10 @@ function renderMessages(msgs){
         textHtml=esc(text.substring(mediaTypes[m].length).replace(/^\n/,''));break
       }
     }
-    html+='<div class="msg'+(isPersian(text)?' rtl-msg':'')+'" dir="auto">'+mediaHtml+textHtml+'<div class="msg-meta"><span>#'+id+'</span><span>'+timeStr+'</span></div></div>';
+    html+='<div class="msg'+(isPersian(text)?' rtl-msg':'')+'" dir="auto">'+mediaHtml+textHtml+'<div class="msg-meta"><button class="msg-copy-btn" onclick="copyMsg('+i+')" title="'+t('copy')+'">&#128203;</button><span>#'+id+'</span><span>'+timeStr+'</span></div></div>';
   }
-  el.innerHTML=html;el.scrollTop=el.scrollHeight;
+  el.innerHTML=html;
+  if(isFirstRender||wasAtBottom)el.scrollTop=el.scrollHeight;
 }
 
 // ===== LOG =====
@@ -910,6 +1054,7 @@ function updateServerFetchDisplay(line){
     item.dataset.total=total;
     item.querySelector('.progress-label').textContent=t('server_fetch_wait')+' — '+total+'s';
     item.querySelector('.progress-fill').style.width='0%';
+    item.dataset.lastUpdate=Date.now();
     return;
   }
   if(!item)return;
@@ -920,6 +1065,7 @@ function updateServerFetchDisplay(line){
     var pct=Math.round(((total2-remaining)/total2)*100);
     item.querySelector('.progress-label').textContent=t('server_fetch_wait')+' — '+remaining+'s';
     item.querySelector('.progress-fill').style.width=pct+'%';
+    item.dataset.lastUpdate=Date.now();
     return;
   }
   // SERVER_FETCH_WAIT done
@@ -930,6 +1076,19 @@ function updateServerFetchDisplay(line){
   }
 }
 
+function ensureResolverScanItem(){
+  var item=document.getElementById('prog-resolvers');
+  if(!item){
+    var panel=document.getElementById('progressPanel');
+    // Remove the generic init loading bar when resolver scan takes over
+    var initItem=document.getElementById('prog-init');if(initItem)initItem.remove();
+    item=document.createElement('div');item.id='prog-resolvers';item.className='progress-item';
+    item.innerHTML='<button class="progress-close" onclick="this.parentNode.remove()" title="Dismiss">&times;</button><div class="progress-label"></div><div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>';
+    panel.insertBefore(item,panel.firstChild);
+  }
+  return item;
+}
+
 function updateResolverScanDisplay(line){
   var panel=document.getElementById('progressPanel');
   var item=document.getElementById('prog-resolvers');
@@ -938,19 +1097,18 @@ function updateResolverScanDisplay(line){
   if(startMatch){
     var total=parseInt(startMatch[1]);
     resolverScanDone=0;resolverScanHealthy=0;resolverScanTotal=total;
-    if(!item){
-      item=document.createElement('div');item.id='prog-resolvers';item.className='progress-item';
-      item.innerHTML='<button class="progress-close" onclick="this.parentNode.remove()" title="Dismiss">&times;</button><div class="progress-label"></div><div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>';
-      panel.insertBefore(item,panel.firstChild);
-    }
+    item=ensureResolverScanItem();
     item.dataset.total=total;
     item.querySelector('.progress-label').textContent=t('scanning_resolvers')+' 0/'+total;
     item.querySelector('.progress-fill').style.width='0%';
+    item.dataset.lastUpdate=Date.now();
     resolverScanHint=t('scanning_resolvers')+'... <button onclick="jumpToLog()" style="background:none;border:none;cursor:pointer;font-size:13px;vertical-align:middle;padding:0 2px">&#128220;</button>';
     var hintEl=document.getElementById('no-ch-hint');if(hintEl)hintEl.innerHTML=resolverScanHint;
     return;
   }
-  if(!item)return;
+  // If the item was removed (e.g. SSE reconnect cleared the panel) but scan
+  // is still in progress, re-create it so progress updates keep showing.
+  if(!item)item=ensureResolverScanItem();
   // RESOLVER_SCAN progress D/T healthy=H
   var progMatch=line.match(/RESOLVER_SCAN progress (\d+)\/(\d+)(?: healthy=(\d+))?/);
   if(progMatch){
@@ -962,6 +1120,7 @@ function updateResolverScanDisplay(line){
     var label=t('scanning_resolvers')+' '+done+'/'+tot+' \u2713'+resolverScanHealthy;
     item.querySelector('.progress-label').textContent=label;
     item.querySelector('.progress-fill').style.width=pct+'%';
+    item.dataset.lastUpdate=Date.now();
     resolverScanHint=t('scanning_resolvers')+' ('+done+'/'+tot+', \u2713'+resolverScanHealthy+')'+ ' <button onclick="jumpToLog()" style="background:none;border:none;cursor:pointer;font-size:13px;vertical-align:middle;padding:0 2px">&#128220;</button>';
     var hintEl=document.getElementById('no-ch-hint');if(hintEl)hintEl.innerHTML=resolverScanHint;
     return;
@@ -974,6 +1133,8 @@ function updateResolverScanDisplay(line){
     item.querySelector('.progress-label').textContent=t('scanning_resolvers')+': '+healthy+'/'+total2+' active';
     item.querySelector('.progress-fill').style.width='100%';
     resolverScanHint='';
+    // Remove init loading bar if it's still around
+    var initItem=document.getElementById('prog-init');if(initItem)initItem.remove();
     var hintEl=document.getElementById('no-ch-hint');if(hintEl)hintEl.innerHTML=t('no_channels_hint')+' <button onclick="jumpToLog()" style="background:none;border:none;cursor:pointer;font-size:13px;vertical-align:middle;padding:0 2px">&#128220;</button> '+t('no_channels_hint2');
     setTimeout(function(){if(item.parentNode)item.parentNode.removeChild(item)},2000);
     // Scan is done — load channels in case the SSE 'update' event was dropped.
@@ -1000,8 +1161,20 @@ function updateProgressDisplay(line){
   }
   item.querySelector('.progress-label').textContent=label;
   item.querySelector('.progress-fill').style.width=percent+'%';
+  // Mark last-update time so stale items can be cleaned
+  item.dataset.lastUpdate=Date.now();
   if(percent>=100)setTimeout(function(){if(item.parentNode)item.parentNode.removeChild(item)},800);
 }
+
+// Periodically remove stale progress items that stopped updating (missed 'done' event)
+setInterval(function(){
+  var now=Date.now();
+  var items=document.getElementById('progressPanel').querySelectorAll('.progress-item');
+  for(var i=0;i<items.length;i++){
+    var lu=parseInt(items[i].dataset.lastUpdate||'0');
+    if(lu>0&&now-lu>30000)items[i].remove();
+  }
+},10000);
 
 function toggleLog(){
   logVisible=!logVisible;
@@ -1025,7 +1198,7 @@ function jumpToLog(){
 function showInitProgress(){
   document.getElementById('progressPanel').innerHTML='';
   var p=document.getElementById('progressPanel');
-  p.innerHTML='<div class="progress-item" id="prog-init"><button class="progress-close" onclick="this.parentNode.remove()" title="Dismiss">&times;</button><div class="progress-label">'+t('loading')+'</div><div class="progress-bar"><div class="progress-fill" style="width:30%;animation:prog-pulse 1.5s ease-in-out infinite"></div></div></div>';
+  p.innerHTML='<div class="progress-item" id="prog-init" data-last-update="'+Date.now()+'"><button class="progress-close" onclick="this.parentNode.remove()" title="Dismiss">&times;</button><div class="progress-label">'+t('loading')+'</div><div class="progress-bar"><div class="progress-fill" style="width:30%;animation:prog-pulse 1.5s ease-in-out infinite"></div></div></div>';
   if(window.innerWidth<=768){openChat();openLog();}
 }
 function startAutoRefresh(){if(autoRefreshTimer)return;autoRefreshTimer=setInterval(function(){if(selectedChannel>0)doRefresh(true)},600000)}
@@ -1035,10 +1208,20 @@ function updateNextFetchDisplay(){
   var info=document.getElementById('nextFetchInfoBtn');
   if(!serverNextFetch){el.textContent='';if(info)info.style.display='none';return}
   if(info){info.style.display='';info.title=t('next_fetch_info')}
+  var autoRefreshed=false;
   function tick(){var now=Math.floor(Date.now()/1000),d=serverNextFetch-now;
-    if(d<=0){el.textContent='';return}
+    if(d<=0){el.textContent='';
+      if(!autoRefreshed){autoRefreshed=true;setTimeout(function(){doAutoRefreshAfterCountdown()},3000)}
+      return}
     var m=Math.floor(d/60),s=d%60;el.textContent=m+':'+(s<10?'0':'')+s}
   tick();nextFetchInterval=setInterval(tick,1000);
+}
+async function doRefreshUI(){
+  var btn=document.getElementById('refreshBtn');
+  btn.style.animation='spin .8s linear';
+  showToast(t('refreshing'));
+  await doRefresh(false);
+  setTimeout(function(){btn.style.animation=''},800);
 }
 async function doRefresh(quiet){
   try{
@@ -1047,6 +1230,26 @@ async function doRefresh(quiet){
     if(quiet)url+=(url.includes('?')?'&':'?')+'quiet=1';
     await fetch(url,{method:'POST'});
     if(!quiet&&selectedChannel>0)setTimeout(function(){loadChannels();loadMessages(selectedChannel)},3000);
+  }catch(e){}
+}
+
+async function doAutoRefreshAfterCountdown(){
+  // Auto-triggered when server fetch countdown reaches 0
+  // Clear metadata cache so we get fresh data
+  try{localStorage.removeItem(cacheKey())}catch(e){}
+  try{
+    // Reload channels (this also fetches /api/status and updates the timer)
+    await loadChannels();
+    // If we have a selected channel, reload its messages too
+    if(selectedChannel>0)await loadMessages(selectedChannel);
+    // If the timer still didn't show (server may not have refreshed yet), retry after a delay
+    if(!serverNextFetch||serverNextFetch<=Math.floor(Date.now()/1000)){
+      setTimeout(async function(){
+        try{var sr=await fetch('/api/status');var st=await sr.json();
+          if(st.nextFetch&&st.nextFetch>Math.floor(Date.now()/1000)){serverNextFetch=st.nextFetch;updateNextFetchDisplay()}
+        }catch(e){}
+      },15000);
+    }
   }catch(e){}
 }
 
@@ -1064,7 +1267,7 @@ async function sendMessage(){
 // ===== COPY MSG =====
 function copyMsg(idx){
   var text=currentMsgTexts[idx];if(text===undefined)return;
-  navigator.clipboard.writeText(text).then(function(){showToast(t('copied'))}).catch(function(){});
+  navigator.clipboard.writeText(text).then(function(){showToast(t('msg_copied'))}).catch(function(){});
 }
 
 // ===== TOAST =====

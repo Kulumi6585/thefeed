@@ -27,6 +27,10 @@ class ThefeedService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         // If the process died, restart it
         if (process == null || !isProcessAlive()) {
             startClientProcessAsync()
@@ -45,6 +49,8 @@ class ThefeedService : Service() {
         process = null
         savePort(-1)
         super.onDestroy()
+        // Kill the entire app process so the activity doesn't remain open
+        android.os.Process.killProcess(android.os.Process.myPid())
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -160,12 +166,21 @@ class ThefeedService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val stopIntent = Intent(this, ThefeedService::class.java).apply {
+            action = ACTION_STOP
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this, 1, stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("thefeed")
             .setContentText(message)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true)
             .setContentIntent(pendingIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Exit", stopPendingIntent)
             .setSilent(true)
             .build()
     }
@@ -184,5 +199,6 @@ class ThefeedService : Service() {
         const val NOTIFICATION_ID = 1201
         const val PREFS_NAME = "thefeed_runtime"
         const val PREF_PORT = "port"
+        const val ACTION_STOP = "com.thefeed.android.STOP"
     }
 }

@@ -17,10 +17,13 @@ import (
 // updates the active (healthy) resolver pool. It replaces the old file/CIDR
 // scanner — no file I/O; just a plain DNS probe on channel 0.
 type ResolverChecker struct {
-	fetcher *Fetcher
-	timeout time.Duration
-	logFunc LogFunc
-	started atomic.Bool // guards against double-start
+	fetcher    *Fetcher
+	timeout    time.Duration
+	logFunc    LogFunc
+	started    atomic.Bool        // guards against double-start
+	scanMu     sync.Mutex         // protects scanCancel
+	scanRunMu  sync.Mutex         // only one CheckNow at a time (via TryLock)
+	scanCancel context.CancelFunc // cancels the currently running CheckNow
 }
 
 // NewResolverChecker creates a health checker for the resolvers in fetcher.
@@ -110,12 +113,46 @@ func (rc *ResolverChecker) StartAndNotify(ctx context.Context, onFirstDone func(
 	}()
 }
 
+// CancelCurrentScan cancels any in-progress CheckNow call, causing it to
+// return early without updating the resolver list.
+func (rc *ResolverChecker) CancelCurrentScan() {
+	rc.scanMu.Lock()
+	if rc.scanCancel != nil {
+		rc.scanCancel()
+		rc.scanCancel = nil
+	}
+	rc.scanMu.Unlock()
+}
+
 // CheckNow runs a single resolver health-check pass immediately.
-// ctx is used to abort in-flight probes early (e.g. when a profile is switched).
-func (rc *ResolverChecker) CheckNow(ctx context.Context) {
+// If a scan is already in progress the call is a no-op (returns false).
+// Returns true if the scan ran to completion.
+// Use CancelCurrentScan to abort a running scan from outside.
+func (rc *ResolverChecker) CheckNow(ctx context.Context) bool {
+	// Non-blocking: if another scan is running, skip.
+	if !rc.scanRunMu.TryLock() {
+		return false
+	}
+	defer rc.scanRunMu.Unlock()
+
+	if ctx.Err() != nil {
+		return false
+	}
+
+	scanCtx, cancel := context.WithCancel(ctx)
+	rc.scanMu.Lock()
+	rc.scanCancel = cancel
+	rc.scanMu.Unlock()
+	defer func() {
+		cancel()
+		rc.scanMu.Lock()
+		rc.scanCancel = nil
+		rc.scanMu.Unlock()
+	}()
+
 	resolvers := rc.fetcher.AllResolvers()
 	if len(resolvers) == 0 {
-		return
+		return true
 	}
 
 	total := len(resolvers)
@@ -129,7 +166,7 @@ func (rc *ResolverChecker) CheckNow(ctx context.Context) {
 
 	for _, r := range resolvers {
 		// Stop launching new probes if context was cancelled.
-		if ctx.Err() != nil {
+		if scanCtx.Err() != nil {
 			break
 		}
 		wg.Add(1)
@@ -138,7 +175,7 @@ func (rc *ResolverChecker) CheckNow(ctx context.Context) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			ok := rc.checkOne(ctx, r)
+			ok := rc.checkOne(scanCtx, r)
 			mu.Lock()
 			if ok {
 				healthy = append(healthy, r)
@@ -153,18 +190,19 @@ func (rc *ResolverChecker) CheckNow(ctx context.Context) {
 	}
 	wg.Wait()
 
-	if ctx.Err() != nil {
-		return // context cancelled — don't update resolver list
+	if scanCtx.Err() != nil {
+		return false // context cancelled — don't update resolver list
 	}
 
 	rc.fetcher.SetActiveResolvers(healthy)
 	if len(healthy) == 0 {
 		rc.log("Resolver check done: 0/%d healthy", len(resolvers))
 		rc.log("RESOLVER_SCAN done 0/%d", total)
-		return
+		return true
 	}
 	rc.log("Resolver check done: %d/%d healthy", len(healthy), len(resolvers))
 	rc.log("RESOLVER_SCAN done %d/%d", len(healthy), total)
+	return true
 }
 
 // checkOne probes a single resolver by sending a metadata channel query
@@ -197,12 +235,32 @@ func (rc *ResolverChecker) checkOne(ctx context.Context, resolver string) bool {
 	m.RecursionDesired = true
 	m.SetEdns0(4096, false)
 
+	type exResult struct {
+		resp    *dns.Msg
+		latency time.Duration
+		err     error
+	}
+	ch := make(chan exResult, 1)
 	start := time.Now()
-	resp, _, err := c.ExchangeContext(probeCtx, m, resolver)
-	latency := time.Since(start)
-	if err != nil || resp == nil {
+	go func() {
+		r, _, e := c.ExchangeContext(probeCtx, m, resolver)
+		ch <- exResult{r, time.Since(start), e}
+	}()
+
+	var resp *dns.Msg
+	var latency time.Duration
+	select {
+	case <-ctx.Done():
+		cancel() // ensure probeCtx resources freed
 		rc.fetcher.RecordFailure(resolver)
 		return false
+	case res := <-ch:
+		resp = res.resp
+		latency = res.latency
+		if res.err != nil || resp == nil {
+			rc.fetcher.RecordFailure(resolver)
+			return false
+		}
 	}
 
 	// Require a decodable TXT record — same check as a real fetch.

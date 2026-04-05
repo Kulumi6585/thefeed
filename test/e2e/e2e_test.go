@@ -1319,3 +1319,164 @@ func TestE2E_WebAPI_SendTooLong(t *testing.T) {
 		t.Errorf("send too long: expected 400, got %d", resp.StatusCode)
 	}
 }
+
+// --- Cache Clear API Tests ---
+
+func TestE2E_WebAPI_ClearCache_Empty(t *testing.T) {
+	base, _ := startWebServer(t)
+
+	resp := postJSON(t, base+"/api/cache/clear", "")
+	m := decodeJSON(t, resp)
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if m["ok"] != true {
+		t.Errorf("expected ok=true, got %v", m["ok"])
+	}
+	if m["deleted"] != float64(0) {
+		t.Errorf("deleted = %v, want 0", m["deleted"])
+	}
+}
+
+func TestE2E_WebAPI_ClearCache_WithFiles(t *testing.T) {
+	domain := "cache.example.com"
+	passphrase := "cache-test-key"
+	channels := []string{"cached"}
+	msgs := map[int][]protocol.Message{
+		1: {{ID: 1, Timestamp: 1700000000, Text: "Cached msg"}},
+	}
+
+	resolver, cancelDNS := startDNSServer(t, domain, passphrase, channels, msgs)
+	defer cancelDNS()
+
+	dataDir := t.TempDir()
+	port := findFreePort(t, "tcp")
+	srv, err := web.New(dataDir, port, "")
+	if err != nil {
+		t.Fatalf("create web server: %v", err)
+	}
+	go srv.Run()
+	time.Sleep(200 * time.Millisecond)
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+
+	// Configure and trigger channel fetch to populate cache.
+	cfgJSON := fmt.Sprintf(`{"domain":"%s","key":"%s","resolvers":["%s"],"queryMode":"single","rateLimit":0}`,
+		domain, passphrase, resolver)
+	http.Post(base+"/api/config", "application/json", strings.NewReader(cfgJSON))
+	time.Sleep(2 * time.Second) // wait for resolver scan + metadata
+
+	http.Post(base+"/api/refresh?channel=1", "application/json", nil)
+	time.Sleep(1500 * time.Millisecond)
+
+	// Verify cache files exist.
+	cacheDir := dataDir + "/cache"
+	entries, _ := os.ReadDir(cacheDir)
+	if len(entries) == 0 {
+		t.Fatal("expected cache files to exist after fetch")
+	}
+
+	// Clear cache.
+	resp := postJSON(t, base+"/api/cache/clear", "")
+	m := decodeJSON(t, resp)
+	if resp.StatusCode != 200 {
+		t.Fatalf("clear cache: expected 200, got %d", resp.StatusCode)
+	}
+	if m["ok"] != true {
+		t.Errorf("expected ok=true, got %v", m["ok"])
+	}
+	deleted, _ := m["deleted"].(float64)
+	if deleted == 0 {
+		t.Error("expected deleted > 0 after clearing populated cache")
+	}
+
+	// Verify cache dir is empty.
+	entries2, _ := os.ReadDir(cacheDir)
+	if len(entries2) != 0 {
+		t.Errorf("expected 0 files after clear, got %d", len(entries2))
+	}
+}
+
+func TestE2E_WebAPI_ClearCache_MethodNotAllowed(t *testing.T) {
+	base, _ := startWebServer(t)
+
+	resp, err := http.Get(base + "/api/cache/clear")
+	if err != nil {
+		t.Fatalf("GET /api/cache/clear: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 405 {
+		t.Errorf("expected 405, got %d", resp.StatusCode)
+	}
+}
+
+// --- Rescan API Tests ---
+
+func TestE2E_WebAPI_Rescan_NotConfigured(t *testing.T) {
+	base, _ := startWebServer(t)
+
+	resp := postJSON(t, base+"/api/rescan", "")
+	defer resp.Body.Close()
+	if resp.StatusCode != 400 {
+		t.Errorf("rescan without config: expected 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestE2E_WebAPI_Rescan_MethodNotAllowed(t *testing.T) {
+	base, _ := startWebServer(t)
+
+	resp, err := http.Get(base + "/api/rescan")
+	if err != nil {
+		t.Fatalf("GET /api/rescan: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 405 {
+		t.Errorf("expected 405, got %d", resp.StatusCode)
+	}
+}
+
+func TestE2E_WebAPI_Rescan_Configured(t *testing.T) {
+	domain := "rescan.example.com"
+	passphrase := "rescan-test-key"
+	channels := []string{"rescanned"}
+	msgs := map[int][]protocol.Message{
+		1: {{ID: 1, Timestamp: 1700000000, Text: "test"}},
+	}
+
+	resolver, cancelDNS := startDNSServer(t, domain, passphrase, channels, msgs)
+	defer cancelDNS()
+
+	dataDir := t.TempDir()
+	port := findFreePort(t, "tcp")
+	srv, err := web.New(dataDir, port, "")
+	if err != nil {
+		t.Fatalf("create web server: %v", err)
+	}
+	go srv.Run()
+	time.Sleep(200 * time.Millisecond)
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+
+	cfgJSON := fmt.Sprintf(`{"domain":"%s","key":"%s","resolvers":["%s"],"queryMode":"single","rateLimit":0}`,
+		domain, passphrase, resolver)
+	http.Post(base+"/api/config", "application/json", strings.NewReader(cfgJSON))
+	time.Sleep(2 * time.Second)
+
+	// Call rescan — should succeed.
+	resp := postJSON(t, base+"/api/rescan", "")
+	m := decodeJSON(t, resp)
+	if resp.StatusCode != 200 {
+		t.Fatalf("rescan: expected 200, got %d", resp.StatusCode)
+	}
+	if m["ok"] != true {
+		t.Errorf("expected ok=true, got %v", m["ok"])
+	}
+
+	// Rapid double-call should also succeed (second is a no-op via TryLock).
+	resp2 := postJSON(t, base+"/api/rescan", "")
+	m2 := decodeJSON(t, resp2)
+	if resp2.StatusCode != 200 {
+		t.Fatalf("rescan double: expected 200, got %d", resp2.StatusCode)
+	}
+	if m2["ok"] != true {
+		t.Errorf("double rescan: expected ok=true, got %v", m2["ok"])
+	}
+}

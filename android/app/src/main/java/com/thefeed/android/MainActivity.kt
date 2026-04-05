@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.net.Uri
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -103,6 +104,19 @@ class MainActivity : ComponentActivity() {
 
     private fun configureWebView() {
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): Boolean {
+                val url = request?.url ?: return false
+                // External links (anything not our local server) open in the system browser
+                if (url.host != "127.0.0.1") {
+                    startActivity(Intent(Intent.ACTION_VIEW, url))
+                    return true
+                }
+                return false
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 if (url != null && url.startsWith("http://127.0.0.1")) {
                     setStatus("")
