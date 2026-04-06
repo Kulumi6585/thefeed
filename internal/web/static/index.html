@@ -20,7 +20,7 @@ input,textarea,select{font-family:inherit}
 /* ===== LAYOUT ===== */
 .app{display:flex;height:100vh;direction:ltr}
 .sidebar{width:280px;min-width:280px;background:var(--sidebar-bg);display:flex;flex-direction:column;border-right:1px solid var(--border);overflow:hidden}
-.chat-area{flex:1;display:flex;flex-direction:column;background:var(--bg);overflow:hidden}
+.chat-area{flex:1;display:flex;flex-direction:column;background:var(--bg);overflow:hidden;position:relative}
 
 /* ===== SIDEBAR HEADER ===== */
 .sidebar-header{padding:10px 12px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--border)}
@@ -103,6 +103,13 @@ input,textarea,select{font-family:inherit}
 @keyframes badge-pulse{0%,100%{box-shadow:0 0 0 0 rgba(51,144,236,.4)}50%{box-shadow:0 0 0 4px rgba(51,144,236,0)}}
 .refresh-has-new{animation:badge-pulse 2s ease-in-out infinite;color:var(--accent)!important}
 .msg-copy-btn{background:none;border:none;color:var(--text-dim);font-size:14px;cursor:pointer;padding:0 3px;line-height:1;flex-shrink:0;opacity:.45;transition:opacity .15s}.msg-copy-btn:hover{opacity:1}
+
+/* ===== SCROLL-TO-BOTTOM ===== */
+.scroll-down-btn{position:absolute;bottom:70px;right:16px;width:36px;height:36px;border:none;border-radius:50%;background:var(--surface2);color:var(--text);font-size:18px;display:none;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.45);z-index:10;cursor:pointer;border:1px solid var(--border)}
+.scroll-down-btn.visible{display:flex}
+.scroll-down-btn:hover{background:var(--hover)}
+.scroll-down-badge{position:absolute;top:-4px;right:-4px;background:var(--accent);color:#fff;font-size:9px;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:none;align-items:center;justify-content:center;padding:0 3px}
+.scroll-down-badge.visible{display:flex}
 
 /* ===== LOG ===== */
 .log-toggle{display:flex;align-items:center;justify-content:space-between;padding:3px 14px;background:var(--bg2);cursor:pointer;user-select:none;font-size:10px;color:var(--text-dim);letter-spacing:.5px;border-top:1px solid var(--border)}
@@ -260,6 +267,7 @@ html[dir=ltr] .active-badge{margin-left:0;margin-right:6px}
       <input class="send-input" id="sendInput" data-i18n-ph="write_message" placeholder="Write a message..." maxlength="4000">
       <button class="send-btn" onclick="sendMessage()">&#10148;</button>
     </div>
+    <button class="scroll-down-btn" id="scrollDownBtn" onclick="scrollToBottom()" title="Jump to latest">&#8595;<span class="scroll-down-badge" id="scrollDownBadge"></span></button>
     <div class="progress-panel" id="progressPanel"></div>
     <div class="log-toggle" onclick="toggleLog()"><span>LOG</span><span id="logToggleIcon">&#9654;</span></div>
     <div class="log-panel hidden" id="logPanel"></div>
@@ -268,6 +276,19 @@ html[dir=ltr] .active-badge{margin-left:0;margin-right:6px}
 
 <!-- TOAST -->
 <div id="toast"></div>
+
+<!-- ===== SAVED RESOLVERS POPUP ===== -->
+<div class="modal-overlay" id="savedResolversModal">
+<div class="modal" style="max-width:380px">
+  <h2 data-i18n="saved_resolvers_title">Quick Start</h2>
+  <p id="savedResolversMsg" style="font-size:13px;color:var(--text-dim);margin-bottom:16px;line-height:1.6"></p>
+  <div class="modal-actions">
+    <button class="btn btn-flat" onclick="savedResolversSkip()" data-i18n="saved_resolvers_skip">Skip</button>
+    <button class="btn btn-outline" onclick="savedResolversRescan()" data-i18n="saved_resolvers_rescan">Scan Again</button>
+    <button class="btn btn-primary" onclick="savedResolversUseNow()" data-i18n="saved_resolvers_use">Use Now</button>
+  </div>
+</div>
+</div>
 
 <!-- ===== SETTINGS MODAL ===== -->
 <div class="modal-overlay" id="settingsModal">
@@ -401,6 +422,14 @@ var I18N = {
     add_manual:'✎ ساخت دستی',rescan:'بررسی مجدد',
     new_messages:'پیام جدید',missed_messages:'{n} پیام از دست رفته یا حذف شده',
     clear_cache:'پاک کردن کش',cache_cleared:'کش پاک شد!',
+    saved_resolvers_title:'شروع سریع',
+    saved_resolvers_msg:'آخرین اسکن ({t}) نتیجه داد: {n} سرور DNS سالم پیدا شد. همین‌ها را استفاده کنیم یا دوباره اسکن کنیم؟',
+    saved_resolvers_use:'استفاده کن (بدون اسکن)',
+    saved_resolvers_rescan:'اسکن مجدد',
+    saved_resolvers_skip:'بعداً',
+    saved_resolvers_applied:'سرورهای DNS ذخیره‌شده اعمال شدند',
+    minutes_ago:'دقیقه پیش',
+    hours_ago:'ساعت پیش',
   },
   en: {
     search:'Search...',settings:'Settings',profiles:'Profiles',
@@ -435,6 +464,14 @@ var I18N = {
     add_manual:'✎ Create Manually',rescan:'Rescan',
     new_messages:'New messages',missed_messages:'{n} messages missed or deleted',
     clear_cache:'Clear Cache',cache_cleared:'Cache cleared!',
+    saved_resolvers_title:'Quick Start',
+    saved_resolvers_msg:'Last scan ({t}) found {n} healthy DNS servers. Use them now (no scan needed), or scan again to re-verify.',
+    saved_resolvers_use:'Use Now (skip scan)',
+    saved_resolvers_rescan:'Scan Again',
+    saved_resolvers_skip:'Later',
+    saved_resolvers_applied:'Saved DNS servers applied!',
+    minutes_ago:'min ago',
+    hours_ago:'hr ago',
   }
 };
 var lang = localStorage.getItem('thefeed_lang') || 'fa';
@@ -476,6 +513,7 @@ async function init(){
     var r=await fetch('/api/status');var st=await r.json();
     await loadProfiles();
     if(!st.configured){openProfiles();return}
+    checkAndShowSavedResolversPrompt(st);
     telegramLoggedIn=!!st.telegramLoggedIn;
     serverNextFetch=st.nextFetch||0;
     updateNextFetchDisplay();
@@ -512,6 +550,35 @@ async function saveSettings(){
 }
 async function clearCache(){
   try{var r=await fetch('/api/cache/clear',{method:'POST'});var j=await r.json();if(j.ok){alert(t('cache_cleared'))}}catch(e){}
+}
+
+// ===== SAVED RESOLVERS PROMPT =====
+function checkAndShowSavedResolversPrompt(status){
+  if(sessionStorage.getItem('thefeed_scan_prompt_shown'))return;
+  if(!status.lastScan||!status.lastScan.count)return;
+  var ls=status.lastScan;
+  var ageSec=Math.floor(Date.now()/1000)-ls.scannedAt;
+  var ageStr;
+  if(ageSec<3600)ageStr=Math.max(1,Math.round(ageSec/60))+' '+t('minutes_ago');
+  else ageStr=Math.round(ageSec/3600)+' '+t('hours_ago');
+  var msg=t('saved_resolvers_msg').replace('{n}',ls.count).replace('{t}',ageStr);
+  document.getElementById('savedResolversMsg').textContent=msg;
+  document.getElementById('savedResolversModal').classList.add('active');
+}
+function savedResolversSkip(){
+  // "Later" — just close, server already applied saved resolvers and refresh is underway
+  document.getElementById('savedResolversModal').classList.remove('active');
+  sessionStorage.setItem('thefeed_scan_prompt_shown','1');
+}
+function savedResolversUseNow(){
+  // Server already applied saved resolvers at startup; just close the popup
+  savedResolversSkip();
+  showToast(t('saved_resolvers_applied'));
+}
+async function savedResolversRescan(){
+  savedResolversSkip();
+  try{await fetch('/api/rescan',{method:'POST'})}catch(e){}
+  showToast(t('rescan_started'));
 }
 
 // ===== SSE =====
@@ -902,6 +969,7 @@ async function selectChannel(num){
   document.getElementById('chatName').textContent=name;
   renderChannels();updateSendPanel();
   document.getElementById('messages').innerHTML='<div class="empty-state"><p>'+t('loading')+'</p></div>';
+  document.getElementById('scrollDownBtn').classList.remove('visible');
   // Show immediate feedback progress bar
   showChannelFetchProgress(num,name);
   await loadMessages(num);
@@ -1017,7 +1085,7 @@ function renderMessages(msgs){
     html+='<div class="msg'+(isPersian(text)?' rtl-msg':'')+'" dir="auto">'+mediaHtml+textHtml+'<div class="msg-meta"><button class="msg-copy-btn" onclick="copyMsg('+i+')" title="'+t('copy')+'">&#128203;</button><span>#'+id+'</span><span>'+timeStr+'</span></div></div>';
   }
   el.innerHTML=html;
-  if(isFirstRender||wasAtBottom)el.scrollTop=el.scrollHeight;
+  if(isFirstRender||wasAtBottom){el.scrollTop=el.scrollHeight;document.getElementById('scrollDownBtn').classList.remove('visible');}
 }
 
 // ===== LOG =====
@@ -1268,6 +1336,25 @@ async function sendMessage(){
 function copyMsg(idx){
   var text=currentMsgTexts[idx];if(text===undefined)return;
   navigator.clipboard.writeText(text).then(function(){showToast(t('msg_copied'))}).catch(function(){});
+}
+
+// ===== SCROLL TO BOTTOM =====
+(function(){
+  var messagesEl=null;
+  function initScrollBtn(){
+    messagesEl=document.getElementById('messages');
+    if(!messagesEl)return;
+    messagesEl.addEventListener('scroll',function(){
+      var atBottom=messagesEl.scrollHeight-messagesEl.scrollTop-messagesEl.clientHeight<150;
+      document.getElementById('scrollDownBtn').classList.toggle('visible',!atBottom);
+    });
+  }
+  // Init after DOM is ready
+  document.addEventListener('DOMContentLoaded',initScrollBtn,{once:true});
+})();
+function scrollToBottom(){
+  var el=document.getElementById('messages');
+  if(el)el.scrollTop=el.scrollHeight;
 }
 
 // ===== TOAST =====

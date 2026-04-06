@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,6 +21,7 @@ type ResolverChecker struct {
 	fetcher    *Fetcher
 	timeout    time.Duration
 	logFunc    LogFunc
+	onScanDone func([]string)     // called after each completed scan with healthy resolvers
 	started    atomic.Bool        // guards against double-start
 	scanMu     sync.Mutex         // protects scanCancel
 	scanRunMu  sync.Mutex         // only one CheckNow at a time (via TryLock)
@@ -41,6 +43,12 @@ func NewResolverChecker(fetcher *Fetcher, timeout time.Duration) *ResolverChecke
 // SetLogFunc sets the callback used to emit health-check results to the log panel.
 func (rc *ResolverChecker) SetLogFunc(fn LogFunc) {
 	rc.logFunc = fn
+}
+
+// SetOnScanDone registers a callback invoked after each completed CheckNow pass
+// with the list of healthy resolver addresses. Not called when the scan is cancelled.
+func (rc *ResolverChecker) SetOnScanDone(fn func([]string)) {
+	rc.onScanDone = fn
 }
 
 // Start begins the periodic health-check loop in the background.
@@ -82,35 +90,51 @@ func (rc *ResolverChecker) StartAndNotify(ctx context.Context, onFirstDone func(
 			onFirstDone()
 		}
 
-		// Periodic re-check every 30 minutes.
-		ticker := time.NewTicker(30 * time.Minute)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				rc.CheckNow(ctx)
-				// If the periodic check leaves us with no resolvers,
-				// fall back into the retry-every-minute loop.
-				if ctx.Err() == nil && len(rc.fetcher.Resolvers()) == 0 {
-					rc.log("All resolvers lost — scanning every minute until one recovers...")
-					for {
-						select {
-						case <-ctx.Done():
-							return
-						case <-time.After(1 * time.Minute):
-						}
-						rc.CheckNow(ctx)
-						if ctx.Err() != nil || len(rc.fetcher.Resolvers()) > 0 {
-							break
-						}
-						rc.log("Still no healthy resolvers — retrying in 1 minute...")
+		rc.runPeriodicLoop(ctx)
+	}()
+}
+
+// StartPeriodic starts only the periodic 30-minute health-check loop without
+// running an initial scan. Use when resolvers are already available (e.g.
+// loaded from a saved last-scan file on startup).
+// Safe to call only once per checker instance; subsequent calls are no-ops.
+func (rc *ResolverChecker) StartPeriodic(ctx context.Context) {
+	if !rc.started.CompareAndSwap(false, true) {
+		return
+	}
+	go rc.runPeriodicLoop(ctx)
+}
+
+// runPeriodicLoop is the shared 30-minute ticker loop used by both
+// StartAndNotify and StartPeriodic.
+func (rc *ResolverChecker) runPeriodicLoop(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			rc.CheckNow(ctx)
+			// If the periodic check leaves us with no resolvers,
+			// fall back into the retry-every-minute loop.
+			if ctx.Err() == nil && len(rc.fetcher.Resolvers()) == 0 {
+				rc.log("All resolvers lost — scanning every minute until one recovers...")
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(1 * time.Minute):
 					}
+					rc.CheckNow(ctx)
+					if ctx.Err() != nil || len(rc.fetcher.Resolvers()) > 0 {
+						break
+					}
+					rc.log("Still no healthy resolvers — retrying in 1 minute...")
 				}
 			}
 		}
-	}()
+	}
 }
 
 // CancelCurrentScan cancels any in-progress CheckNow call, causing it to
@@ -155,20 +179,43 @@ func (rc *ResolverChecker) CheckNow(ctx context.Context) bool {
 		return true
 	}
 
+	// Shuffle so each scan probes resolvers in a fresh random order, preventing
+	// the same resolvers from always being probed first (more even load distribution).
+	rand.Shuffle(len(resolvers), func(i, j int) { resolvers[i], resolvers[j] = resolvers[j], resolvers[i] })
+
 	total := len(resolvers)
+	concurrency := rc.fetcher.ScanConcurrency()
 	rc.log("RESOLVER_SCAN start %d", total)
+	rc.log("scanner started: probing %d resolvers (concurrency=%d, batch-pause every 50)", total, concurrency)
 
 	var healthy []string
 	var mu sync.Mutex
 	var done int
 	wg := &sync.WaitGroup{}
-	sem := make(chan struct{}, 10) // probe up to 10 resolvers concurrently
+	sem := make(chan struct{}, concurrency)
 
+	launched := 0
 	for _, r := range resolvers {
 		// Stop launching new probes if context was cancelled.
 		if scanCtx.Err() != nil {
 			break
 		}
+		// Rate-limit pause: every 50 launched probes, sleep 3-10 s so we don't
+		// flood resolver rate limits before moving to the next batch.
+		if launched > 0 && launched%50 == 0 {
+			pause := 3*time.Second + time.Duration(rand.Intn(8))*time.Second
+			timer := time.NewTimer(pause)
+			select {
+			case <-scanCtx.Done():
+				timer.Stop()
+				break
+			case <-timer.C:
+			}
+			if scanCtx.Err() != nil {
+				break
+			}
+		}
+		launched++
 		wg.Add(1)
 		go func(r string) {
 			defer wg.Done()
@@ -198,10 +245,13 @@ func (rc *ResolverChecker) CheckNow(ctx context.Context) bool {
 	if len(healthy) == 0 {
 		rc.log("Resolver check done: 0/%d healthy", len(resolvers))
 		rc.log("RESOLVER_SCAN done 0/%d", total)
-		return true
+	} else {
+		rc.log("Resolver check done: %d/%d healthy", len(healthy), len(resolvers))
+		rc.log("RESOLVER_SCAN done %d/%d", len(healthy), total)
 	}
-	rc.log("Resolver check done: %d/%d healthy", len(healthy), len(resolvers))
-	rc.log("RESOLVER_SCAN done %d/%d", len(healthy), total)
+	if rc.onScanDone != nil {
+		rc.onScanDone(healthy)
+	}
 	return true
 }
 

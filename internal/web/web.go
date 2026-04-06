@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	mrand "math/rand/v2"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -55,6 +56,12 @@ type ProfileList struct {
 	// FontSize stores user's preferred font size (0 = default 14).
 	FontSize int  `json:"fontSize,omitempty"`
 	Debug    bool `json:"debug,omitempty"`
+}
+
+// lastScanData is the on-disk structure for last_scan.json.
+type lastScanData struct {
+	Resolvers []string `json:"resolvers"`
+	ScannedAt int64    `json:"scannedAt"`
 }
 
 // Server is the web UI server for thefeed client.
@@ -165,6 +172,7 @@ func (s *Server) Run() error {
 	mux.HandleFunc("/api/profiles/switch", s.handleProfileSwitch)
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/cache/clear", s.handleClearCache)
+	mux.HandleFunc("/api/resolvers/apply-saved", s.handleApplySavedResolvers)
 	mux.HandleFunc("/", s.handleIndex)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", s.port)
@@ -172,7 +180,16 @@ func (s *Server) Run() error {
 	fmt.Printf("\n  Open in browser: http://%s\n\n", addr)
 
 	if s.fetcher != nil {
-		s.startCheckerThenRefresh()
+		if ls := s.loadLastScan(); ls != nil {
+			// Fast path: apply saved healthy resolvers immediately and skip the
+			// initial full scan. Only the periodic 30-min checker starts.
+			// This gives the UI near-instant channel data on app open.
+			s.fetcher.SetActiveResolvers(ls.Resolvers)
+			s.checker.StartPeriodic(s.fetcherCtx)
+			go s.refreshMetadataOnly()
+		} else {
+			s.startCheckerThenRefresh()
+		}
 	}
 
 	var handler http.Handler = mux
@@ -227,6 +244,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		status["channels"] = s.channels
 		status["telegramLoggedIn"] = s.telegramLoggedIn
 		status["nextFetch"] = s.nextFetch
+		// Include last resolver scan if recent (<24 h) so the frontend can offer a quick-start.
+		if ls := s.loadLastScan(); ls != nil {
+			status["lastScan"] = map[string]any{
+				"resolvers": ls.Resolvers,
+				"scannedAt": ls.ScannedAt,
+				"count":     len(ls.Resolvers),
+			}
+		}
 	}
 	writeJSON(w, status)
 }
@@ -344,7 +369,24 @@ func (s *Server) handleRescan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	go func() {
+		// Cancel any in-progress metadata refresh so it doesn't race with the
+		// scan — we want fresh resolver data before we hit DNS again.
+		s.refreshMu.Lock()
+		if s.refreshCancel != nil {
+			s.refreshCancel()
+			s.refreshCancel = nil
+		}
+		s.refreshMu.Unlock()
+
 		if checker.CheckNow(baseCtx) {
+			// Cool-down: give resolvers time to recover from the scan's DNS
+			// queries before we immediately hit them again with a fetch.
+			sleep := 3*time.Second + time.Duration(mrand.IntN(13))*time.Second // 3–15 s
+			select {
+			case <-baseCtx.Done():
+				return
+			case <-time.After(sleep):
+			}
 			s.refreshMetadataOnly()
 		}
 	}()
@@ -610,6 +652,11 @@ func (s *Server) initFetcher() error {
 	checker.SetLogFunc(func(msg string) {
 		s.addLog(msg)
 	})
+	checker.SetOnScanDone(func(healthy []string) {
+		if len(healthy) > 0 {
+			s.saveLastScan(healthy)
+		}
+	})
 	s.checker = checker
 
 	s.fetcher = fetcher
@@ -727,7 +774,7 @@ func (s *Server) refreshMetadataOnly() {
 		s.refreshMu.Unlock()
 	}()
 
-	s.addLog("Fetching metadata...")
+	s.addLog(fmt.Sprintf("Fetching metadata... (%d active resolvers)", len(fetcher.Resolvers())))
 
 	// If the server's next Telegram fetch is imminent (within 5 s), wait for it first.
 	if dl := s.nextFetchDeadline(); !dl.IsZero() && time.Until(dl) < 5*time.Second {
@@ -959,6 +1006,57 @@ func (s *Server) loadConfig() (*Config, error) {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// saveLastScan persists the healthy resolver list from the most recent scan.
+func (s *Server) saveLastScan(resolvers []string) {
+	d := lastScanData{Resolvers: resolvers, ScannedAt: time.Now().Unix()}
+	b, err := json.MarshalIndent(d, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(s.dataDir, "last_scan.json"), b, 0600)
+}
+
+// loadLastScan reads the most recent resolver scan result.
+// Returns nil when the file doesn't exist or is older than 24 hours.
+func (s *Server) loadLastScan() *lastScanData {
+	b, err := os.ReadFile(filepath.Join(s.dataDir, "last_scan.json"))
+	if err != nil {
+		return nil
+	}
+	var d lastScanData
+	if err := json.Unmarshal(b, &d); err != nil {
+		return nil
+	}
+	if len(d.Resolvers) == 0 || time.Since(time.Unix(d.ScannedAt, 0)) > 24*time.Hour {
+		return nil
+	}
+	return &d
+}
+
+// handleApplySavedResolvers immediately activates the resolvers from the last
+// scan file, letting the UI skip the current scan and start fetching channels.
+func (s *Server) handleApplySavedResolvers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	ls := s.loadLastScan()
+	if ls == nil {
+		http.Error(w, "no saved scan", 400)
+		return
+	}
+	s.mu.RLock()
+	fetcher := s.fetcher
+	s.mu.RUnlock()
+	if fetcher == nil {
+		http.Error(w, "not configured", 400)
+		return
+	}
+	fetcher.SetActiveResolvers(ls.Resolvers)
+	go s.refreshMetadataOnly()
+	writeJSON(w, map[string]any{"ok": true, "count": len(ls.Resolvers)})
 }
 
 func (s *Server) saveConfig(cfg *Config) error {

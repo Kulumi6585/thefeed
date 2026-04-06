@@ -120,6 +120,21 @@ func (f *Fetcher) SetRateLimit(qps float64) {
 	f.rateQPS = qps
 }
 
+// ScanConcurrency returns how many resolvers the scanner should probe in
+// parallel, derived from the configured rate limit.
+// Rule: concurrency = max(1, floor(rateQPS)).
+// If rateQPS is 0 (unlimited), falls back to the default of 10.
+func (f *Fetcher) ScanConcurrency() int {
+	if f.rateQPS <= 0 {
+		return 10
+	}
+	n := int(f.rateQPS)
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
 // SetTimeout sets the per-query DNS timeout.
 func (f *Fetcher) SetTimeout(d time.Duration) {
 	f.timeout = d
@@ -146,6 +161,7 @@ func (f *Fetcher) SetActiveResolvers(resolvers []string) {
 	defer f.mu.Unlock()
 	f.activeResolvers = make([]string, len(resolvers))
 	copy(f.activeResolvers, resolvers)
+	f.log("active resolvers updated: %d/%d healthy", len(resolvers), len(f.allResolvers))
 }
 
 // SetResolvers replaces the full resolver list and resets the active pool.
@@ -344,6 +360,7 @@ func (f *Fetcher) scatterQuery(ctx context.Context, resolvers []string, qname st
 // Call once per fetcher configuration; creating a new fetcher replaces the old one.
 func (f *Fetcher) Start(ctx context.Context) {
 	if f.rateQPS > 0 {
+		f.log("fetcher started: %d configured resolvers, rate=%.1f q/s, scatter=%d", len(f.allResolvers), f.rateQPS, f.scatter)
 		f.rateCh = make(chan struct{}, 1)
 		go f.runRateLimiter(ctx)
 		go f.runNoise(ctx)
@@ -473,9 +490,6 @@ func (f *Fetcher) FetchBlock(ctx context.Context, channel, block uint16) ([]byte
 		if err != nil {
 			return nil, fmt.Errorf("encode query: %w", err)
 		}
-		if f.debug {
-			f.log("[debug] query ch=%d blk=%d attempt=%d qname=%s", channel, block, attempt+1, qname)
-		}
 
 		scatter := f.scatter
 		if scatter < 1 {
@@ -484,6 +498,10 @@ func (f *Fetcher) FetchBlock(ctx context.Context, channel, block uint16) ([]byte
 		picked := f.pickWeightedResolvers(scatter)
 		if len(picked) == 0 {
 			return nil, fmt.Errorf("no active resolvers")
+		}
+		if f.debug {
+			f.log("[debug] query ch=%d blk=%d attempt=%d qname=%s resolvers=[%s]",
+				channel, block, attempt+1, qname, strings.Join(picked, ","))
 		}
 
 		data, err := f.scatterQuery(ctx, picked, qname)
