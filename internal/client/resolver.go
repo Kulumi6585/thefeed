@@ -94,7 +94,7 @@ func (rc *ResolverChecker) StartAndNotify(ctx context.Context, onFirstDone func(
 	}()
 }
 
-// StartPeriodic starts only the periodic 30-minute health-check loop without
+// StartPeriodic starts only the periodic Hour health-check loop without
 // running an initial scan. Use when resolvers are already available (e.g.
 // loaded from a saved last-scan file on startup).
 // Safe to call only once per checker instance; subsequent calls are no-ops.
@@ -105,10 +105,10 @@ func (rc *ResolverChecker) StartPeriodic(ctx context.Context) {
 	go rc.runPeriodicLoop(ctx)
 }
 
-// runPeriodicLoop is the shared 30-minute ticker loop used by both
+// runPeriodicLoop is the shared Hour ticker loop used by both
 // StartAndNotify and StartPeriodic.
 func (rc *ResolverChecker) runPeriodicLoop(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Minute)
+	ticker := time.NewTicker(time.Hour)
 	defer ticker.Stop()
 	for {
 		select {

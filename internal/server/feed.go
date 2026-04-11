@@ -20,9 +20,11 @@ type Feed struct {
 	chatTypes        map[int]protocol.ChatType
 	canSend          map[int]bool
 	metaBlocks       [][]byte // metadata for all channels
+	versionBlocks    [][]byte // channel for latest server-known release version
 	updated          time.Time
 	telegramLoggedIn bool
 	nextFetch        uint32
+	latestVersion    string
 }
 
 // NewFeed creates a new Feed with the given channel names.
@@ -37,6 +39,7 @@ func NewFeed(channels []string) *Feed {
 	}
 	f.rotateMarker()
 	f.rebuildMetaBlocks()
+	f.rebuildVersionBlocks()
 	return f
 }
 
@@ -75,6 +78,9 @@ func (f *Feed) GetBlock(channel, block int) ([]byte, error) {
 	if channel == protocol.MetadataChannel {
 		return f.getMetadataBlock(block)
 	}
+	if channel == int(protocol.VersionChannel) {
+		return f.getVersionBlock(block)
+	}
 
 	ch, ok := f.blocks[channel]
 	if !ok {
@@ -84,6 +90,18 @@ func (f *Feed) GetBlock(channel, block int) ([]byte, error) {
 		return nil, fmt.Errorf("block %d out of range (channel %d has %d blocks)", block, channel, len(ch))
 	}
 	return ch[block], nil
+}
+
+func (f *Feed) getVersionBlock(block int) ([]byte, error) {
+	blocks := f.versionBlocks
+	if len(blocks) == 0 {
+		f.rebuildVersionBlocks()
+		blocks = f.versionBlocks
+	}
+	if block < 0 || block >= len(blocks) {
+		return nil, fmt.Errorf("version block %d out of range (%d blocks)", block, len(blocks))
+	}
+	return blocks[block], nil
 }
 
 func (f *Feed) getMetadataBlock(block int) ([]byte, error) {
@@ -126,6 +144,22 @@ func (f *Feed) rebuildMetaBlocks() {
 	}
 
 	f.metaBlocks = protocol.SplitIntoBlocks(protocol.SerializeMetadata(&meta))
+}
+
+func (f *Feed) rebuildVersionBlocks() {
+	block, err := protocol.EncodeVersionData(f.latestVersion)
+	if err != nil {
+		block = make([]byte, protocol.MinBlockPayload)
+	}
+	f.versionBlocks = [][]byte{block}
+}
+
+// SetLatestVersion stores latest known release version for the dedicated version channel.
+func (f *Feed) SetLatestVersion(v string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.latestVersion = v
+	f.rebuildVersionBlocks()
 }
 
 // ChannelNames returns the configured channel names.

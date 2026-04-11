@@ -30,6 +30,8 @@ type PublicReader struct {
 	mu       sync.RWMutex
 	cache    map[string]cachedMessages
 	cacheTTL time.Duration
+
+	refreshCh chan struct{}
 }
 
 // NewPublicReader creates a reader for public channels without Telegram login.
@@ -48,9 +50,10 @@ func NewPublicReader(channelUsernames []string, feed *Feed, msgLimit int) *Publi
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		baseURL:  "https://t.me/s",
-		cache:    make(map[string]cachedMessages),
-		cacheTTL: 10 * time.Minute,
+		baseURL:   "https://t.me/s",
+		cache:     make(map[string]cachedMessages),
+		cacheTTL:  10 * time.Minute,
+		refreshCh: make(chan struct{}, 1),
 	}
 }
 
@@ -70,8 +73,36 @@ func (pr *PublicReader) Run(ctx context.Context) error {
 		case <-ticker.C:
 			pr.fetchAll(ctx)
 			pr.feed.SetNextFetch(uint32(time.Now().Add(10 * time.Minute).Unix()))
+		case <-pr.refreshCh:
+			pr.mu.Lock()
+			pr.cache = make(map[string]cachedMessages)
+			pr.mu.Unlock()
+			pr.fetchAll(ctx)
+			ticker.Reset(10 * time.Minute)
+			pr.feed.SetNextFetch(uint32(time.Now().Add(10 * time.Minute).Unix()))
 		}
 	}
+}
+
+// RequestRefresh signals the fetch loop to re-fetch immediately.
+func (pr *PublicReader) RequestRefresh() {
+	select {
+	case pr.refreshCh <- struct{}{}:
+	default:
+	}
+}
+
+// UpdateChannels replaces the channel list and updates Feed metadata.
+func (pr *PublicReader) UpdateChannels(channels []string) {
+	cleaned := make([]string, len(channels))
+	for i, u := range channels {
+		cleaned[i] = strings.TrimPrefix(strings.TrimSpace(u), "@")
+	}
+	pr.mu.Lock()
+	pr.channels = cleaned
+	pr.cache = make(map[string]cachedMessages)
+	pr.mu.Unlock()
+	pr.feed.SetChannels(cleaned)
 }
 
 func (pr *PublicReader) fetchAll(ctx context.Context) {
@@ -175,7 +206,7 @@ func parsePublicMessages(body []byte) ([]protocol.Message, error) {
 		if err != nil {
 			return
 		}
-		text := strings.TrimSpace(extractMessageText(findFirstByClass(n, "tgme_widget_message_text")))
+		text := strings.TrimSpace(extractMessageText(findMessageBodyNode(n)))
 		mediaPrefix := ""
 		switch {
 		case findFirstByClass(n, "tgme_widget_message_photo_wrap") != nil:
@@ -324,6 +355,28 @@ func findFirstElement(n *html.Node, tag string) *html.Node {
 		}
 	})
 	return found
+}
+
+// findMessageBodyNode returns the main post text node while skipping reply preview
+// snippets. In Telegram public HTML, quoted/replied text may appear before the
+// real message body and can otherwise be mistakenly parsed as the post text.
+func findMessageBodyNode(n *html.Node) *html.Node {
+	var found *html.Node
+	visitNodes(n, func(cur *html.Node) {
+		if found != nil || !hasClass(cur, "tgme_widget_message_text") {
+			return
+		}
+		for p := cur.Parent; p != nil; p = p.Parent {
+			if hasClass(p, "tgme_widget_message_reply") {
+				return
+			}
+		}
+		found = cur
+	})
+	if found != nil {
+		return found
+	}
+	return findFirstByClass(n, "tgme_widget_message_text")
 }
 
 func extractMessageText(n *html.Node) string {

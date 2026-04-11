@@ -1390,6 +1390,16 @@
         <span data-i18n="version">Version</span>
         <span id="appVersionEl" style="font-family:monospace;color:var(--text)">-</span>
       </div>
+      <div
+        style="margin-top:10px;font-size:11px;color:var(--text-dim);display:flex;align-items:center;justify-content:space-between">
+        <span data-i18n="latest_version">Latest Version</span>
+        <span id="latestVersionEl" style="font-family:monospace;color:var(--text)">-</span>
+      </div>
+      <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:12px;color:var(--text-dim)" data-i18n="check_latest_version">Check for Updates</span>
+        <button class="btn btn-outline" id="checkVersionBtn" onclick="checkLatestVersion()"
+          style="font-size:11px;padding:4px 12px" data-i18n="check_now">Check Now</button>
+      </div>
       <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between">
         <span style="font-size:12px;color:var(--text-dim)" data-i18n="clear_cache">Clear Cache</span>
         <button class="btn btn-flat" onclick="clearCache()"
@@ -1447,10 +1457,10 @@
           <option value="double">Multi-label (hex)</option>
         </select>
       </div>
-      <div class="form-group"><label data-i18n="rate_limit">Rate Limit (q/s, 0=unlimited)</label><input type="number"
-          id="peRateLimit" value="5" min="0" step="0.1"></div>
-      <div class="form-group"><label data-i18n="scatter">Concurrent requests</label><input type="number" id="peScatter"
-          value="2" min="1" max="5" title="How many resolvers to query simultaneously per DNS request"></div>
+        <div class="form-group"><label data-i18n="rate_limit">Concurrent block fetches</label><input type="number"
+          id="peRateLimit" value="6" min="0" step="0.1"></div>
+        <div class="form-group"><label data-i18n="scatter">Parallel resolvers per block</label><input type="number" id="peScatter"
+          value="4" min="1" max="5" title="How many resolvers are queried at the same time for one block"></div>
       <!-- Channel Management (editing only) -->
       <div id="peChannelSection" style="display:none">
         <hr class="section-divider">
@@ -1494,10 +1504,17 @@
         import_success: 'وارد شد! پروفایل "{d}" ساخته شد.', import_error: 'خطا در وارد کردن',
         new_profile: 'پروفایل جدید', edit_profile: 'ویرایش پروفایل',
         nickname: 'نام مستعار', domain: 'دامنه', passphrase: 'رمز رمزنگاری',
-        resolvers: 'Resolvers (یک در هر خط)', query_mode: 'حالت کوئری', rate_limit: 'محدودیت نرخ (ک/ث، ۰=بدون محدودیت)',
+        resolvers: 'Resolvers (یک در هر خط)', query_mode: 'حالت کوئری', rate_limit: 'تعداد همزمانی دریافت بلاک‌ها',
         channels: 'کانال\u200cها', add: 'افزودن', remove: 'حذف',
-        scatter: 'درخواست‌های همزمان',
-        channel_mgmt_note: 'مدیریت کانال نیاز به پشتیبانی سمت سرور دارد. اگر توسط ادمین غیرفعال شده باشد، افزودن/حذف کار نمی\u200cکند.',
+        scatter: 'تعداد ریزالور همزمان برای هر بلاک',
+        update_available: 'نسخه جدید موجود است: {v}',
+        latest_version: 'آخرین نسخه قابل دانلود',
+        check_latest_version: 'بررسی نسخه جدید',
+        check_now: 'بررسی',
+        checking_version: 'در حال بررسی...',
+        version_up_to_date: 'نسخه شما به‌روز است: {v}',
+        version_check_failed: 'بررسی نسخه ناموفق بود',
+        channel_mgmt_note: 'قابلیت مدیریت کانال نیاز به فعال سازی سمت سرور دارد. اگر توسط ادمین غیرفعال شده باشد، افزودن/حذف کار نمی\u200cکند.',
         channel_mgmt_inactive: 'برای مدیریت کانال\u200cها، ابتدا این پروفایل را فعال کنید.',
         channel_placeholder: 'نام کاربری کانال',
         version: 'نسخه',
@@ -1536,9 +1553,16 @@
         import_success: 'Imported! Profile "{d}" created.', import_error: 'Import error',
         new_profile: 'New Profile', edit_profile: 'Edit Profile',
         nickname: 'Nickname', domain: 'Domain', passphrase: 'Passphrase',
-        resolvers: 'Resolvers (one per line)', query_mode: 'Query Mode', rate_limit: 'Rate Limit (q/s, 0=unlimited)',
+        resolvers: 'Resolvers (one per line)', query_mode: 'Query Mode', rate_limit: 'Concurrent block fetches',
         channels: 'Channels', add: 'Add', remove: 'Remove',
-        scatter: 'Concurrent requests',
+        scatter: 'Parallel resolvers per block',
+        update_available: 'New version available: {v}',
+        latest_version: 'Latest Version',
+        check_latest_version: 'Check for Updates',
+        check_now: 'Check Now',
+        checking_version: 'Checking...',
+        version_up_to_date: 'You are up to date: {v}',
+        version_check_failed: 'Version check failed',
         channel_mgmt_note: 'Channel management requires server-side support. If disabled by the server admin, adding/removing channels will not work.',
         channel_mgmt_inactive: 'Switch to this profile first to manage its channels.',
         channel_placeholder: 'channel_username',
@@ -1581,6 +1605,7 @@
     // ===== STATE =====
     var selectedChannel = 0, channels = [], eventSource = null, autoRefreshTimer = null, telegramLoggedIn = false, logVisible = false;
     var serverNextFetch = 0, nextFetchInterval = null, previousMsgIDs = {}, currentMsgTexts = [];
+    var appVersion = '', latestVersion = '';
     var profiles = null, activeProfileId = '', editingProfileId = null, resolverScanHint = '', resolverScanHealthy = 0, resolverScanDone = 0, resolverScanTotal = 0;
 
     // ===== MOBILE NAV =====
@@ -1604,6 +1629,8 @@
         checkAndShowSavedResolversPrompt(st);
         telegramLoggedIn = !!st.telegramLoggedIn;
         serverNextFetch = st.nextFetch || 0;
+        latestVersion = st.latestVersion || '';
+        renderLatestVersion();
         updateNextFetchDisplay();
         await loadChannels();
         if (channels && channels.length > 0) await selectChannel(1);
@@ -1622,19 +1649,95 @@
           document.getElementById('fontSizeVal').textContent = s.fontSize;
         }
         if (s.debug) document.getElementById('cfgDebug').checked = true;
-        if (s.version) { var vEl = document.getElementById('appVersionEl'); if (vEl) vEl.textContent = s.version + (s.commit && s.commit !== 'unknown' ? ' (' + s.commit.slice(0, 7) + ')' : ''); }
+        if (s.version) { appVersion = s.version; renderAppVersion(s.version, s.commit); }
+        renderLatestVersion();
       } catch (e) { }
+    }
+
+    function renderAppVersion(v, commit) {
+      var vEl = document.getElementById('appVersionEl');
+      if (!vEl) return;
+      if (!v) { vEl.textContent = '-'; return; }
+      vEl.textContent = v + (commit && commit !== 'unknown' ? ' (' + commit.slice(0, 7) + ')' : '');
+    }
+
+    function renderLatestVersion() {
+      var vEl = document.getElementById('latestVersionEl');
+      if (vEl) vEl.textContent = latestVersion || '-';
+    }
+
+    function normalizeVersion(v) {
+      if (!v) return '';
+      v = String(v).trim().replace(/^v/i, '');
+      return v;
+    }
+
+    function compareSemver(a, b) {
+      a = normalizeVersion(a); b = normalizeVersion(b);
+      if (!a || !b || a === 'dev' || b === 'dev') return 0;
+      var as = a.split('.'); var bs = b.split('.');
+      var n = Math.max(as.length, bs.length);
+      for (var i = 0; i < n; i++) {
+        var ai = parseInt(as[i] || '0', 10); if (isNaN(ai)) ai = 0;
+        var bi = parseInt(bs[i] || '0', 10); if (isNaN(bi)) bi = 0;
+        if (ai > bi) return 1;
+        if (ai < bi) return -1;
+      }
+      return 0;
+    }
+
+    function maybeWarnNewVersion() {
+      if (!latestVersion || !appVersion) return;
+      if (compareSemver(latestVersion, appVersion) <= 0) return;
+      var seenKey = 'thefeed_seen_update_' + normalizeVersion(latestVersion);
+      if (localStorage.getItem(seenKey) === '1') return;
+      localStorage.setItem(seenKey, '1');
+      showToast(t('update_available').replace('{v}', latestVersion));
+      addLogLine('Warning: ' + t('update_available').replace('{v}', latestVersion));
     }
     function previewFontSize(v) { document.documentElement.style.setProperty('--font-size', v + 'px'); document.getElementById('fontSizeVal').textContent = v }
 
     // ===== SETTINGS =====
-    function openSettings() { document.getElementById('settingsModal').classList.add('active') }
+    function openSettings() { renderLatestVersion(); document.getElementById('settingsModal').classList.add('active') }
     function closeSettings() { document.getElementById('settingsModal').classList.remove('active') }
     async function saveSettings() {
       var fs = parseInt(document.getElementById('fontSizeSlider').value) || 14;
       var dbg = document.getElementById('cfgDebug').checked;
       try { await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fontSize: fs, debug: dbg }) }) } catch (e) { }
       closeSettings();
+    }
+    async function checkLatestVersion() {
+      var btn = document.getElementById('checkVersionBtn');
+      var prevText = btn ? btn.textContent : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = t('checking_version');
+      }
+      try {
+        var r = await fetch('/api/version-check', { method: 'POST' });
+        var text = await r.text();
+        var data = {};
+        try { data = JSON.parse(text) } catch (e) { }
+        if (!r.ok) {
+          showToast(text || t('version_check_failed'));
+          return;
+        }
+        latestVersion = data.latestVersion || '';
+        renderLatestVersion();
+        if (!latestVersion) {
+          showToast(t('version_check_failed'));
+          return;
+        }
+        if (compareSemver(latestVersion, appVersion) > 0) maybeWarnNewVersion();
+        else showToast(t('version_up_to_date').replace('{v}', latestVersion));
+      } catch (e) {
+        showToast(e.message || t('version_check_failed'));
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = prevText || t('check_now');
+        }
+      }
     }
     async function clearCache() {
       try { var r = await fetch('/api/cache/clear', { method: 'POST' }); var j = await r.json(); if (j.ok) { alert(t('cache_cleared')) } } catch (e) { }
@@ -1816,7 +1919,7 @@
         params.split('&').forEach(function (kv) { var p = kv.split('='); if (p[0] === 'r' && p[1]) resolvers = decodeURIComponent(p[1]).split(',').filter(Boolean) });
         if (!domain || !key) { errEl.textContent = t('uri_missing'); errEl.style.display = 'block'; return }
         if (!resolvers.length) resolvers = ['8.8.8.8', '1.1.1.1'];
-        var profile = { id: '', nickname: domain, config: { domain: domain, key: key, resolvers: resolvers, queryMode: 'single', rateLimit: 5 } };
+        var profile = { id: '', nickname: domain, config: { domain: domain, key: key, resolvers: resolvers, queryMode: 'single', rateLimit: 6 } };
         var r = await fetch('/api/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create', profile: profile }) });
         if (!r.ok) throw new Error('save failed');
         okEl.textContent = t('import_success').replace('{d}', domain); okEl.style.display = 'block';
@@ -1841,8 +1944,8 @@
           document.getElementById('peKey').value = p.config.key || '';
           document.getElementById('peResolvers').value = (p.config.resolvers || []).join('\n');
           document.getElementById('peQueryMode').value = p.config.queryMode || 'single';
-          document.getElementById('peRateLimit').value = p.config.rateLimit || 5;
-          document.getElementById('peScatter').value = p.config.scatter || 2;
+          document.getElementById('peRateLimit').value = p.config.rateLimit || 6;
+          document.getElementById('peScatter').value = p.config.scatter || 4;
         }
         document.getElementById('peChannelSection').style.display = '';
         var isActive = id === activeProfileId;
@@ -1863,8 +1966,8 @@
         document.getElementById('peKey').value = '';
         document.getElementById('peResolvers').value = '';
         document.getElementById('peQueryMode').value = 'single';
-        document.getElementById('peRateLimit').value = '5';
-        document.getElementById('peScatter').value = '2';
+        document.getElementById('peRateLimit').value = '6';
+        document.getElementById('peScatter').value = '4';
         document.getElementById('peChannelSection').style.display = 'none';
       }
     }
@@ -1913,7 +2016,7 @@
       var key = document.getElementById('peKey').value;
       var resolvers = document.getElementById('peResolvers').value.trim().split(/[\n,]+/).map(function (s) { return s.trim() }).filter(Boolean);
       if (!domain || !key || !resolvers.length) { errEl.textContent = t('resolvers') + ' / ' + t('domain') + ' / ' + t('passphrase'); errEl.style.display = 'block'; return }
-      var profile = { id: editingProfileId || '', nickname: nick || domain, config: { domain: domain, key: key, resolvers: resolvers, queryMode: document.getElementById('peQueryMode').value, rateLimit: parseFloat(document.getElementById('peRateLimit').value) || 5, scatter: parseInt(document.getElementById('peScatter').value) || 2 } };
+      var profile = { id: editingProfileId || '', nickname: nick || domain, config: { domain: domain, key: key, resolvers: resolvers, queryMode: document.getElementById('peQueryMode').value, rateLimit: parseFloat(document.getElementById('peRateLimit').value) || 6, scatter: parseInt(document.getElementById('peScatter').value) || 4 } };
       var action = editingProfileId ? 'update' : 'create';
       var wasFirst = !profiles || !profiles.profiles || profiles.profiles.length === 0;
       try {
@@ -1970,6 +2073,7 @@
         var sr = await fetch('/api/status'); var st = await sr.json();
         telegramLoggedIn = !!st.telegramLoggedIn;
         if (st.nextFetch) { serverNextFetch = st.nextFetch; updateNextFetchDisplay() }
+        if (st.latestVersion) { latestVersion = st.latestVersion; renderLatestVersion() }
       } catch (e) { }
     }
 

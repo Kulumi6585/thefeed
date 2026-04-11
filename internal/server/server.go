@@ -21,6 +21,7 @@ type Config struct {
 	MsgLimit     int  // max messages per channel (0 = default 15)
 	NoTelegram   bool // if true, fetch public channels without Telegram login
 	AllowManage  bool // if true, remote channel management and sending via DNS is allowed
+	Debug        bool // if true, log every decoded DNS query
 	Telegram     TelegramConfig
 }
 
@@ -54,6 +55,9 @@ func (s *Server) Run(ctx context.Context) error {
 		return fmt.Errorf("derive keys: %w", err)
 	}
 
+	go startLatestVersionTracker(ctx, s.feed)
+	var channelCtl channelRefresher
+
 	// Handle login-only mode
 	if s.cfg.Telegram.LoginOnly {
 		reader := NewTelegramReader(s.cfg.Telegram, s.feed.ChannelNames(), s.feed, 15)
@@ -68,6 +72,7 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 		reader := NewTelegramReader(s.cfg.Telegram, s.feed.ChannelNames(), s.feed, msgLimit)
 		s.reader = reader
+		channelCtl = reader
 		go func() {
 			if err := reader.Run(ctx); err != nil {
 				log.Printf("[telegram] error: %v", err)
@@ -79,6 +84,7 @@ func (s *Server) Run(ctx context.Context) error {
 			msgLimit = 15
 		}
 		publicReader := NewPublicReader(s.feed.ChannelNames(), s.feed, msgLimit)
+		channelCtl = publicReader
 		go func() {
 			if err := publicReader.Run(ctx); err != nil && ctx.Err() == nil {
 				log.Printf("[public] error: %v", err)
@@ -92,7 +98,10 @@ func (s *Server) Run(ctx context.Context) error {
 	if maxPad == 0 {
 		maxPad = protocol.DefaultMaxPadding
 	}
-	dnsServer := NewDNSServer(s.cfg.ListenAddr, s.cfg.Domain, s.feed, queryKey, responseKey, maxPad, s.reader, s.cfg.AllowManage, s.cfg.ChannelsFile)
+	dnsServer := NewDNSServer(s.cfg.ListenAddr, s.cfg.Domain, s.feed, queryKey, responseKey, maxPad, s.reader, s.cfg.AllowManage, s.cfg.ChannelsFile, s.cfg.Debug)
+	if channelCtl != nil {
+		dnsServer.SetChannelRefresher(channelCtl)
+	}
 	return dnsServer.ListenAndServe(ctx)
 }
 

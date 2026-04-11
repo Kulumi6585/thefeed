@@ -3,9 +3,12 @@ package server
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -15,11 +18,15 @@ import (
 	"github.com/sartoopjj/thefeed/internal/protocol"
 )
 
+const reportChannelBuffer = 4096
+const topResolverLimit = 20
+
 // DNSServer serves feed data over DNS TXT queries.
 type DNSServer struct {
 	domain       string
 	feed         *Feed
 	reader       *TelegramReader // nil when --no-telegram
+	channelCtl   channelRefresher
 	queryKey     [protocol.KeySize]byte
 	responseKey  [protocol.KeySize]byte
 	listenAddr   string
@@ -29,6 +36,27 @@ type DNSServer struct {
 
 	sessionsMu sync.Mutex
 	sessions   map[uint16]*uploadSession
+
+	reportCh chan reportEvent
+	debug    bool
+}
+
+type channelFetchStats struct {
+	Queries int64 `json:"queries"`
+}
+
+type reportEvent struct {
+	channel  uint16
+	resolver string
+}
+
+type hourlyFetchReport struct {
+	windowStart     time.Time
+	totalQueries    int64
+	metadataQueries int64
+	versionQueries  int64
+	perChannel      map[uint16]*channelFetchStats
+	perResolver     map[string]int64
 }
 
 type uploadSession struct {
@@ -40,12 +68,18 @@ type uploadSession struct {
 	expiresAt     time.Time
 }
 
+type channelRefresher interface {
+	UpdateChannels(channels []string)
+	RequestRefresh()
+}
+
 // NewDNSServer creates a DNS server for the given domain.
-func NewDNSServer(listenAddr, domain string, feed *Feed, queryKey, responseKey [protocol.KeySize]byte, maxPadding int, reader *TelegramReader, allowManage bool, channelsFile string) *DNSServer {
+func NewDNSServer(listenAddr, domain string, feed *Feed, queryKey, responseKey [protocol.KeySize]byte, maxPadding int, reader *TelegramReader, allowManage bool, channelsFile string, debug bool) *DNSServer {
 	s := &DNSServer{
 		domain:       strings.TrimSuffix(domain, "."),
 		feed:         feed,
 		reader:       reader,
+		channelCtl:   reader,
 		queryKey:     queryKey,
 		responseKey:  responseKey,
 		listenAddr:   listenAddr,
@@ -53,8 +87,16 @@ func NewDNSServer(listenAddr, domain string, feed *Feed, queryKey, responseKey [
 		allowManage:  allowManage,
 		channelsFile: channelsFile,
 		sessions:     make(map[uint16]*uploadSession),
+		reportCh:     make(chan reportEvent, reportChannelBuffer),
+		debug:        debug,
 	}
 	return s
+}
+
+// SetChannelRefresher allows wiring a non-Telegram channel source (e.g. public reader)
+// for admin update/refresh operations.
+func (s *DNSServer) SetChannelRefresher(channelCtl channelRefresher) {
+	s.channelCtl = channelCtl
 }
 
 // ListenAndServe starts the DNS server on UDP, shutting down when ctx is cancelled.
@@ -73,6 +115,8 @@ func (s *DNSServer) ListenAndServe(ctx context.Context) error {
 		log.Println("[dns] shutting down...")
 		server.Shutdown()
 	}()
+
+	go s.runHourlyReports(ctx)
 
 	log.Printf("[dns] listening on %s (domain: %s)", s.listenAddr, s.domain)
 	return server.ListenAndServe()
@@ -123,6 +167,11 @@ func (s *DNSServer) handleQuery(w dns.ResponseWriter, r *dns.Msg) {
 	if channel == protocol.AdminChannel {
 		s.handleAdminQuery(w, m, q)
 		return
+	}
+
+	s.trackRequestStart(channel, resolverHost(w.RemoteAddr()))
+	if s.debug {
+		log.Printf("[dns] query ch=%d blk=%d from=%s name=%s", channel, block, resolverHost(w.RemoteAddr()), q.Name)
 	}
 
 	data, err := s.feed.GetBlock(int(channel), int(block))
@@ -457,11 +506,13 @@ func (s *DNSServer) adminAddChannel(username string) (string, error) {
 
 	log.Printf("[admin] added channel @%s", username)
 
-	// Update the live reader and trigger immediate fetch.
-	if s.reader != nil {
-		all, _ := loadChannelsFromFile(s.channelsFile)
-		s.reader.UpdateChannels(all)
-		s.reader.RequestRefresh()
+	all, err := loadChannelsFromFile(s.channelsFile)
+	if err == nil {
+		s.feed.SetChannels(all)
+		if s.channelCtl != nil {
+			s.channelCtl.UpdateChannels(all)
+			s.channelCtl.RequestRefresh()
+		}
 	}
 
 	return "OK", nil
@@ -503,10 +554,10 @@ func (s *DNSServer) adminRemoveChannel(username string) (string, error) {
 
 	log.Printf("[admin] removed channel @%s", username)
 
-	// Update the live reader and trigger immediate fetch.
-	if s.reader != nil {
-		s.reader.UpdateChannels(remaining)
-		s.reader.RequestRefresh()
+	s.feed.SetChannels(remaining)
+	if s.channelCtl != nil {
+		s.channelCtl.UpdateChannels(remaining)
+		s.channelCtl.RequestRefresh()
 	}
 
 	return "OK", nil
@@ -521,10 +572,10 @@ func (s *DNSServer) adminListChannels() (string, error) {
 }
 
 func (s *DNSServer) adminRefresh() (string, error) {
-	if s.reader == nil {
-		return "", fmt.Errorf("no Telegram reader")
+	if s.channelCtl == nil {
+		return "", fmt.Errorf("no active channel reader")
 	}
-	s.reader.RequestRefresh()
+	s.channelCtl.RequestRefresh()
 	log.Printf("[admin] hard refresh requested")
 	return "OK", nil
 }
@@ -546,4 +597,149 @@ func loadChannelsFromFile(path string) ([]string, error) {
 		channels = append(channels, strings.TrimPrefix(line, "@"))
 	}
 	return channels, scanner.Err()
+}
+
+func resolverHost(addr net.Addr) string {
+	if addr == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(addr.String())
+	if err == nil {
+		return host
+	}
+	return addr.String()
+}
+
+func (s *DNSServer) trackRequestStart(channel uint16, resolver string) {
+	// Exclude special control channels from per-channel content reporting.
+	if channel == protocol.UpstreamInitChannel || channel == protocol.UpstreamDataChannel || channel == protocol.SendChannel || channel == protocol.AdminChannel {
+		return
+	}
+	s.reportCh <- reportEvent{channel: channel, resolver: resolver}
+}
+
+func (s *DNSServer) runHourlyReports(ctx context.Context) {
+	rep := newHourlyFetchReport(time.Now())
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			s.drainReportEvents(rep)
+			s.emitHourlyReport(rep, true)
+			return
+		case event := <-s.reportCh:
+			recordReportQuery(rep, event)
+		case <-ticker.C:
+			s.emitHourlyReport(rep, false)
+			rep = newHourlyFetchReport(time.Now())
+		}
+	}
+}
+
+func newHourlyFetchReport(start time.Time) *hourlyFetchReport {
+	return &hourlyFetchReport{
+		windowStart: start,
+		perChannel:  make(map[uint16]*channelFetchStats),
+		perResolver: make(map[string]int64),
+	}
+}
+
+func recordReportQuery(rep *hourlyFetchReport, event reportEvent) {
+	rep.totalQueries++
+	if event.resolver != "" {
+		rep.perResolver[event.resolver]++
+	}
+	channel := event.channel
+	if channel == protocol.MetadataChannel {
+		rep.metadataQueries++
+		return
+	}
+	if channel == protocol.VersionChannel {
+		rep.versionQueries++
+		return
+	}
+
+	stats := rep.perChannel[channel]
+	if stats == nil {
+		stats = &channelFetchStats{}
+		rep.perChannel[channel] = stats
+	}
+	stats.Queries++
+}
+
+func (s *DNSServer) drainReportEvents(rep *hourlyFetchReport) {
+	for {
+		select {
+		case event := <-s.reportCh:
+			recordReportQuery(rep, event)
+		default:
+			return
+		}
+	}
+}
+
+func (s *DNSServer) emitHourlyReport(rep *hourlyFetchReport, final bool) {
+
+	names := s.feed.ChannelNames()
+	chs := make([]uint16, 0, len(rep.perChannel))
+	for ch := range rep.perChannel {
+		chs = append(chs, ch)
+	}
+	sort.Slice(chs, func(i, j int) bool { return chs[i] < chs[j] })
+
+	type channelEntry struct {
+		Channel uint16 `json:"channel"`
+		Name    string `json:"name,omitempty"`
+		Queries int64  `json:"queries"`
+	}
+	entries := make([]channelEntry, 0, len(chs))
+	for _, ch := range chs {
+		st := rep.perChannel[ch]
+		name := ""
+		if int(ch) >= 1 && int(ch) <= len(names) {
+			name = names[int(ch)-1]
+		}
+		entries = append(entries, channelEntry{
+			Channel: ch,
+			Name:    name,
+			Queries: st.Queries,
+		})
+	}
+
+	type resolverEntry struct {
+		Resolver string `json:"resolver"`
+		Queries  int64  `json:"queries"`
+	}
+	resolvers := make([]resolverEntry, 0, len(rep.perResolver))
+	for resolver, queries := range rep.perResolver {
+		resolvers = append(resolvers, resolverEntry{Resolver: resolver, Queries: queries})
+	}
+	sort.Slice(resolvers, func(i, j int) bool {
+		if resolvers[i].Queries == resolvers[j].Queries {
+			return resolvers[i].Resolver < resolvers[j].Resolver
+		}
+		return resolvers[i].Queries > resolvers[j].Queries
+	})
+	if len(resolvers) > topResolverLimit {
+		resolvers = resolvers[:topResolverLimit]
+	}
+
+	payload := map[string]any{
+		"type":                 "dns_hourly_report",
+		"from":                 rep.windowStart.UTC().Format(time.RFC3339),
+		"to":                   time.Now().UTC().Format(time.RFC3339),
+		"totalDnsQueries":      rep.totalQueries,
+		"totalMetadataQueries": rep.metadataQueries,
+		"totalVersionQueries":  rep.versionQueries,
+		"channels":             entries,
+		"topResolvers":         resolvers,
+		"finalFlush":           final,
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("[dns_hourly] marshal error: %v", err)
+		return
+	}
+	log.Printf("[dns_hourly] %s", string(b))
 }

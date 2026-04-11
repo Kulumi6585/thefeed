@@ -34,6 +34,7 @@ func main() {
 	maxPadding := flag.Int("padding", 32, "Max random padding bytes in DNS responses (anti-DPI, 0=disabled)")
 	msgLimit := flag.Int("msg-limit", 15, "Maximum messages to fetch per Telegram channel")
 	allowManage := flag.Bool("allow-manage", false, "Allow remote channel management and sending via DNS")
+	debug := flag.Bool("debug", false, "Log every decoded DNS query")
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "thefeed-server %s\n\nServes Telegram channel content over encrypted DNS for censorship-resistant access.\n\nUsage:\n  thefeed-server [flags]\n\nFlags:\n", version.Version)
@@ -140,6 +141,7 @@ func main() {
 		MsgLimit:     *msgLimit,
 		NoTelegram:   *noTelegram,
 		AllowManage:  *allowManage,
+		Debug:        *debug,
 		Telegram: server.TelegramConfig{
 			APIID:       id,
 			APIHash:     *apiHash,

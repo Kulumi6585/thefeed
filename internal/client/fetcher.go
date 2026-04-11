@@ -106,7 +106,7 @@ func NewFetcher(domain, passphrase string, resolvers []string) (*Fetcher, error)
 		// activeResolvers starts empty — the ResolverChecker fills it in after
 		// the first health-check scan so no fetch is attempted with unvalidated resolvers.
 		timeout: 25 * time.Second,
-		scatter: 2, // query 2 resolvers in parallel by default
+		scatter: 4, // query 4 resolvers in parallel by default
 	}
 	f.exchangeFn = func(ctx context.Context, m *dns.Msg, addr string) (*dns.Msg, time.Duration, error) {
 		c := &dns.Client{Timeout: f.timeout, Net: "udp"}
@@ -551,6 +551,17 @@ func (f *Fetcher) FetchMetadata(ctx context.Context) (*protocol.Metadata, error)
 	}
 
 	return nil, fmt.Errorf("could not parse metadata: %w", err)
+}
+
+// FetchLatestVersion fetches the latest release version from the dedicated
+// version channel. The block is padded to a random size matching regular content
+// blocks (DPI-resistant). Empty string means unknown/unavailable.
+func (f *Fetcher) FetchLatestVersion(ctx context.Context) (string, error) {
+	data, err := f.FetchBlock(ctx, protocol.VersionChannel, 0)
+	if err != nil {
+		return "", fmt.Errorf("fetch version block: %w", err)
+	}
+	return protocol.DecodeVersionData(data)
 }
 
 // FetchChannel fetches all blocks for a channel and returns the parsed messages.

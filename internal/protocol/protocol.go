@@ -308,6 +308,41 @@ func randBlockSize() int {
 	return MinBlockPayload + int(n.Int64())
 }
 
+// EncodeVersionData encodes a version string into a single block padded to a
+// random size in [MinBlockPayload, MaxBlockPayload], making it indistinguishable
+// in size from regular content blocks for DPI resistance. Format:
+//
+//	[2 bytes: version byte length][version bytes][random padding]
+func EncodeVersionData(version string) ([]byte, error) {
+	raw := []byte(version)
+	if len(raw) > MaxBlockPayload-2 {
+		raw = raw[:MaxBlockPayload-2]
+	}
+	blockSize := randBlockSize()
+	if blockSize < 2+len(raw) {
+		blockSize = 2 + len(raw)
+	}
+	buf := make([]byte, blockSize)
+	binary.BigEndian.PutUint16(buf, uint16(len(raw)))
+	copy(buf[2:], raw)
+	if _, err := rand.Read(buf[2+len(raw):]); err != nil {
+		return nil, fmt.Errorf("version padding: %w", err)
+	}
+	return buf, nil
+}
+
+// DecodeVersionData extracts the version string from a block produced by EncodeVersionData.
+func DecodeVersionData(block []byte) (string, error) {
+	if len(block) < 2 {
+		return "", fmt.Errorf("version block too short: %d bytes", len(block))
+	}
+	dataLen := int(binary.BigEndian.Uint16(block))
+	if 2+dataLen > len(block) {
+		return "", fmt.Errorf("version block truncated: need %d bytes, have %d", 2+dataLen, len(block))
+	}
+	return string(block[2 : 2+dataLen]), nil
+}
+
 const (
 	// compressionNone means no compression applied (raw serialized messages).
 	compressionNone byte = 0x00

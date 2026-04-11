@@ -118,3 +118,33 @@ func TestParseMetadataTooShort(t *testing.T) {
 		t.Error("expected error for short metadata")
 	}
 }
+
+func TestEncodeDecodeVersionData(t *testing.T) {
+	versions := []string{"", "v1.0.0", "v2.3.14", "1.0.0-beta"}
+	for _, ver := range versions {
+		block, err := EncodeVersionData(ver)
+		if err != nil {
+			t.Fatalf("EncodeVersionData(%q): %v", ver, err)
+		}
+		if len(block) < MinBlockPayload {
+			t.Errorf("EncodeVersionData(%q): block len %d < MinBlockPayload %d", ver, len(block), MinBlockPayload)
+		}
+		if len(block) > MaxBlockPayload {
+			t.Errorf("EncodeVersionData(%q): block len %d > MaxBlockPayload %d", ver, len(block), MaxBlockPayload)
+		}
+		got, err := DecodeVersionData(block)
+		if err != nil {
+			t.Fatalf("DecodeVersionData(%q): %v", ver, err)
+		}
+		if got != ver {
+			t.Errorf("round-trip: got %q, want %q", got, ver)
+		}
+	}
+}
+
+func TestDecodeVersionDataTooShort(t *testing.T) {
+	_, err := DecodeVersionData([]byte{0x01})
+	if err == nil {
+		t.Error("expected error for 1-byte block")
+	}
+}

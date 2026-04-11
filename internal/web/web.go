@@ -38,7 +38,7 @@ type Config struct {
 	// Also used as the resolver health-check probe timeout.
 	Timeout float64 `json:"timeout,omitempty"`
 	// Scatter is the number of resolvers queried simultaneously per DNS block request
-	// (0 or 1 = sequential, 2 = default parallel pair).
+	// (0 or 1 = sequential, 4 = default parallel pair).
 	Scatter int `json:"scatter,omitempty"`
 }
 
@@ -78,6 +78,7 @@ type Server struct {
 	messages         map[int][]protocol.Message
 	telegramLoggedIn bool
 	nextFetch        uint32
+	latestVersion    string
 	lastMsgIDs       map[int]uint32 // last seen message IDs per channel
 	lastHashes       map[int]uint32 // last seen content hashes per channel
 
@@ -178,6 +179,7 @@ func (s *Server) Run() error {
 	mux.HandleFunc("/api/profiles", s.handleProfiles)
 	mux.HandleFunc("/api/profiles/switch", s.handleProfileSwitch)
 	mux.HandleFunc("/api/settings", s.handleSettings)
+	mux.HandleFunc("/api/version-check", s.handleVersionCheck)
 	mux.HandleFunc("/api/cache/clear", s.handleClearCache)
 	mux.HandleFunc("/api/resolvers/apply-saved", s.handleApplySavedResolvers)
 	mux.HandleFunc("/", s.handleIndex)
@@ -251,6 +253,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		status["channels"] = s.channels
 		status["telegramLoggedIn"] = s.telegramLoggedIn
 		status["nextFetch"] = s.nextFetch
+		status["latestVersion"] = s.latestVersion
 		// Include last resolver scan if recent (<24 h) so the frontend can offer a quick-start.
 		if ls := s.loadLastScan(); ls != nil {
 			status["lastScan"] = map[string]any{
@@ -682,6 +685,57 @@ func (s *Server) initFetcher() error {
 	s.cache = cache
 	go cache.Cleanup() // remove channel files not updated in 7 days
 	return nil
+}
+
+func (s *Server) checkLatestVersion(ctx context.Context) (string, error) {
+	s.mu.RLock()
+	cfg := s.config
+	s.mu.RUnlock()
+	if cfg == nil {
+		return "", fmt.Errorf("no config")
+	}
+
+	fetcher, err := client.NewFetcher(cfg.Domain, cfg.Key, cfg.Resolvers)
+	if err != nil {
+		return "", fmt.Errorf("create fetcher: %w", err)
+	}
+	if cfg.QueryMode == "double" {
+		fetcher.SetQueryMode(protocol.QueryMultiLabel)
+	}
+	var debug bool
+	if pl, err := s.loadProfiles(); err == nil {
+		debug = pl.Debug
+	}
+	fetcher.SetDebug(debug)
+	if cfg.RateLimit > 0 {
+		fetcher.SetRateLimit(cfg.RateLimit)
+	}
+	if cfg.Scatter > 1 {
+		fetcher.SetScatter(cfg.Scatter)
+	}
+	timeout := 15 * time.Second
+	if cfg.Timeout > 0 {
+		timeout = time.Duration(cfg.Timeout * float64(time.Second))
+	}
+	fetcher.SetTimeout(timeout)
+	fetcher.SetLogFunc(func(msg string) {
+		s.addLog(msg)
+	})
+	fetcher.SetActiveResolvers(cfg.Resolvers)
+
+	checkCtx, cancel := context.WithTimeout(ctx, timeout*3)
+	defer cancel()
+	fetcher.Start(checkCtx)
+
+	v, err := fetcher.FetchLatestVersion(checkCtx)
+	if err != nil {
+		return "", err
+	}
+
+	s.mu.Lock()
+	s.latestVersion = v
+	s.mu.Unlock()
+	return v, nil
 }
 
 // startCheckerThenRefresh runs the resolver health-check pass synchronously
@@ -1356,6 +1410,30 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", 405)
 	}
+}
+
+func (s *Server) handleVersionCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
+	v, err := s.checkLatestVersion(r.Context())
+	if err != nil {
+		if strings.Contains(err.Error(), "no config") {
+			http.Error(w, "no config", 400)
+			return
+		}
+		errStr := err.Error()
+		if strings.Contains(errStr, "integrity check failed") || strings.Contains(errStr, "message authentication failed") || strings.Contains(errStr, "cipher") {
+			http.Error(w, "invalid passphrase", 400)
+			return
+		}
+		http.Error(w, fmt.Sprintf("version check failed: %v", err), 502)
+		return
+	}
+
+	writeJSON(w, map[string]any{"ok": true, "latestVersion": v})
 }
 
 // handleClearCache deletes all files in the cache directory.

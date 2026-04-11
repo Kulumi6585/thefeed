@@ -29,6 +29,9 @@ const (
 	// UpstreamDataChannel carries one chunk of a chunked upstream session.
 	UpstreamDataChannel uint16 = 0xFFFB
 
+	// VersionChannel serves latest release version with random suffix.
+	VersionChannel uint16 = 0xFFFA
+
 	// MaxUpstreamBlockPayload keeps uploaded query chunks comfortably below DNS
 	// name limits across typical domains and resolver paths.
 	MaxUpstreamBlockPayload = 8

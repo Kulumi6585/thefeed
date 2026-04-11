@@ -100,3 +100,27 @@ func TestMergeMessages(t *testing.T) {
 		t.Fatalf("merged[2].ID = %d, want 99", merged[2].ID)
 	}
 }
+
+func TestParsePublicMessagesReplyPreviewUsesMainBody(t *testing.T) {
+	body := []byte(`
+		<html><body>
+		<div class="tgme_widget_message" data-post="testchan/201">
+			<div class="tgme_widget_message_reply">
+				<div class="tgme_widget_message_text">old replied message preview</div>
+			</div>
+			<div class="tgme_widget_message_text">this is the real new post</div>
+		</div>
+		</body></html>
+	`)
+
+	msgs, err := parsePublicMessages(body)
+	if err != nil {
+		t.Fatalf("parsePublicMessages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("len(msgs) = %d, want 1", len(msgs))
+	}
+	if msgs[0].Text != "this is the real new post" {
+		t.Fatalf("msgs[0].Text = %q, want %q", msgs[0].Text, "this is the real new post")
+	}
+}
