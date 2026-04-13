@@ -390,6 +390,11 @@ func (tr *TelegramReader) extractMessages(hist tg.MessagesMessagesClass, chatTyp
 			}
 		}
 
+		// Mark messages that are replies.
+		if _, hasReply := msg.GetReplyTo(); hasReply {
+			text = protocol.MediaReply + "\n" + text
+		}
+
 		msgs = append(msgs, protocol.Message{
 			ID:        uint32(msg.ID),
 			Timestamp: uint32(msg.Date),

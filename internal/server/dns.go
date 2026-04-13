@@ -28,6 +28,7 @@ type DNSServer struct {
 	reader       *TelegramReader // nil when --no-telegram
 	channelCtl   channelRefresher
 	refreshers   []channelRefresher
+	xReader      *XPublicReader
 	queryKey     [protocol.KeySize]byte
 	responseKey  [protocol.KeySize]byte
 	listenAddr   string
@@ -111,6 +112,11 @@ func (s *DNSServer) AddRefresher(channelCtl channelRefresher) {
 	if channelCtl != nil {
 		s.refreshers = append(s.refreshers, channelCtl)
 	}
+}
+
+// SetXReader stores the XPublicReader so baseCh can be updated on channel changes.
+func (s *DNSServer) SetXReader(xr *XPublicReader) {
+	s.xReader = xr
 }
 
 // ListenAndServe starts the DNS server on UDP, shutting down when ctx is cancelled.
@@ -523,6 +529,9 @@ func (s *DNSServer) adminAddChannel(username string) (string, error) {
 	all, err := loadChannelsFromFile(s.channelsFile)
 	if err == nil {
 		s.feed.SetChannels(combineDisplayChannels(all, s.xAccounts))
+		if s.xReader != nil {
+			s.xReader.SetBaseCh(len(all) + 1)
+		}
 		if s.channelCtl != nil {
 			s.channelCtl.UpdateChannels(all)
 			s.channelCtl.RequestRefresh()
@@ -569,6 +578,9 @@ func (s *DNSServer) adminRemoveChannel(username string) (string, error) {
 	log.Printf("[admin] removed channel @%s", username)
 
 	s.feed.SetChannels(combineDisplayChannels(remaining, s.xAccounts))
+	if s.xReader != nil {
+		s.xReader.SetBaseCh(len(remaining) + 1)
+	}
 	if s.channelCtl != nil {
 		s.channelCtl.UpdateChannels(remaining)
 		s.channelCtl.RequestRefresh()

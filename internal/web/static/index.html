@@ -33,6 +33,24 @@
       --font-size: 14px;
     }
 
+    :root[data-theme="light"] {
+      --bg: #ffffff;
+      --bg2: #f0f2f5;
+      --sidebar-bg: #f0f2f5;
+      --surface: #ffffff;
+      --surface2: #e8eaed;
+      --border: #d3d6da;
+      --accent: #3390ec;
+      --accent-hover: #2b7dd6;
+      --text: #1a1a1a;
+      --text-dim: #707579;
+      --success: #4fae4e;
+      --error: #e53935;
+      --send-color: #3390ec;
+      --msg-in: #ffffff;
+      --hover: #e8eaed;
+    }
+
     * {
       margin: 0;
       padding: 0;
@@ -455,6 +473,10 @@
       border-bottom-left-radius: 4px
     }
 
+    :root[data-theme="light"] .msg {
+      border-color: var(--border)
+    }
+
     .msg-meta {
       display: flex;
       justify-content: flex-end;
@@ -473,6 +495,11 @@
       color: var(--accent);
       font-size: 11px;
       margin-bottom: 6px
+    }
+
+    .media-tag.reply-tag {
+      background: rgba(192, 132, 252, .15);
+      color: #c084fc
     }
 
     /* ===== SEND PANEL ===== */
@@ -621,19 +648,64 @@
 
     .msg-copy-btn {
       background: none;
-      border: none;
+      border: 1px solid var(--text-dim);
       color: var(--text-dim);
-      font-size: 14px;
+      font-size: 11px;
       cursor: pointer;
-      padding: 0 3px;
-      line-height: 1;
+      padding: 1px 8px;
+      line-height: 1.4;
       flex-shrink: 0;
-      opacity: .45;
-      transition: opacity .15s
+      opacity: .6;
+      transition: opacity .15s, border-color .15s;
+      font-family: inherit;
+      border-radius: 4px
     }
 
     .msg-copy-btn:hover {
-      opacity: 1
+      opacity: 1;
+      border-color: var(--accent)
+    }
+
+    .msg-new-sep {
+      text-align: center;
+      padding: 6px 0;
+      font-size: 12px;
+      color: var(--accent)
+    }
+
+    .msg-new-sep span {
+      background: rgba(51, 144, 236, .12);
+      padding: 3px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(51, 144, 236, .25)
+    }
+
+    .theme-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px
+    }
+
+    .theme-btn {
+      flex: 1;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text-dim);
+      font-size: 13px;
+      transition: all .15s
+    }
+
+    .theme-btn:hover {
+      background: var(--hover)
+    }
+
+    .theme-btn.active-theme {
+      border-color: var(--accent);
+      background: rgba(51, 144, 236, .12);
+      color: var(--accent);
+      font-weight: 600
     }
 
     /* ===== SCROLL-TO-BOTTOM ===== */
@@ -1396,6 +1468,13 @@
           <button class="lang-btn" id="langEn" onclick="setLang('en')">English</button>
         </div>
       </div>
+      <div class="form-group">
+        <label data-i18n="theme">Theme</label>
+        <div class="theme-row">
+          <button class="theme-btn" id="themeDark" onclick="setTheme('dark')" data-i18n="theme_dark">Dark</button>
+          <button class="theme-btn" id="themeLight" onclick="setTheme('light')" data-i18n="theme_light">Light</button>
+        </div>
+      </div>
       <div
         style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:11px;color:var(--text-dim);display:flex;align-items:center;justify-content:space-between">
         <span data-i18n="version">Version</span>
@@ -1695,6 +1774,13 @@
         scanner_new_scan: 'اسکن جدید',
         scanner_advanced: 'تنظیمات پیشرفته',
         scanner_copy_all: 'کپی همه',
+        theme: 'پوسته',
+        theme_dark: 'تاریک',
+        theme_light: 'روشن',
+        rescan_prompt_title: 'بررسی ریزالورها',
+        rescan_prompt_msg: '{n} ریزالور سالم از اسکن قبلی موجود است. بدون بررسی مجدد ادامه دهیم؟',
+        rescan_prompt_skip: 'ادامه بدون اسکن',
+        rescan_prompt_yes: 'بررسی مجدد',
       },
       en: {
         search: 'Search...', settings: 'Settings', profiles: 'Profiles',
@@ -1776,6 +1862,13 @@
         scanner_new_scan: 'New Scan',
         scanner_advanced: 'Advanced options',
         scanner_copy_all: 'Copy All',
+        theme: 'Theme',
+        theme_dark: 'Dark',
+        theme_light: 'Light',
+        rescan_prompt_title: 'Resolver Check',
+        rescan_prompt_msg: '{n} healthy resolvers from previous scan. Continue without rescanning?',
+        rescan_prompt_skip: 'Skip Rescan',
+        rescan_prompt_yes: 'Rescan',
       }
     };
     var lang = localStorage.getItem('thefeed_lang') || 'fa';
@@ -1790,6 +1883,7 @@
       document.getElementById('langFa').classList.toggle('active-lang', lang === 'fa');
       document.getElementById('langEn').classList.toggle('active-lang', lang === 'en');
       document.getElementById('sendInput').style.direction = isRtl ? 'rtl' : 'ltr';
+      applyThemeButtons();
       // Re-render dynamic content
       if (channels.length > 0) renderChannels();
     }
@@ -1800,10 +1894,23 @@
     var serverNextFetch = 0, nextFetchInterval = null, previousMsgIDs = {}, currentMsgTexts = [];
     var appVersion = '', latestVersion = '';
     var profiles = null, activeProfileId = '', editingProfileId = null, resolverScanHint = '', resolverScanHealthy = 0, resolverScanDone = 0, resolverScanTotal = 0;
+    var currentMaxMsgID = 0;
+    var currentMaxTimestamp = 0;
+    var newMsgScrollDone = false;
 
     // ===== MOBILE NAV =====
-    function openChat() { if (window.innerWidth <= 768) document.getElementById('app').classList.add('chat-open') }
+    function openChat() {
+      if (window.innerWidth <= 768) {
+        document.getElementById('app').classList.add('chat-open');
+        history.pushState({ view: 'chat' }, '');
+      }
+    }
     function openSidebar() { document.getElementById('app').classList.remove('chat-open') }
+    window.addEventListener('popstate', function () {
+      if (window.innerWidth <= 768 && document.getElementById('app').classList.contains('chat-open')) {
+        openSidebar();
+      }
+    });
     function filterChannels() {
       var q = document.getElementById('channelSearch').value.toLowerCase();
       document.querySelectorAll('.ch-item').forEach(function (el) { el.style.display = el.dataset.name.toLowerCase().includes(q) ? 'flex' : 'none' });
@@ -1811,6 +1918,7 @@
 
     // ===== INIT =====
     async function init() {
+      loadTheme();
       applyLang();
       await loadFontSize();
       connectSSE();
@@ -1818,7 +1926,6 @@
         var r = await fetch('/api/status'); var st = await r.json();
         await loadProfiles();
         if (!st.configured) { openProfiles(); return }
-        cleanupOldLocalStorageKeys();
         checkAndShowSavedResolversPrompt(st);
         telegramLoggedIn = !!st.telegramLoggedIn;
         serverNextFetch = st.nextFetch || 0;
@@ -1890,8 +1997,57 @@
     }
     function previewFontSize(v) { document.documentElement.style.setProperty('--font-size', v + 'px'); document.getElementById('fontSizeVal').textContent = v }
 
+    // ===== THEME =====
+    function loadTheme() {
+      var t = localStorage.getItem('thefeed_theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    }
+    function setTheme(t) {
+      localStorage.setItem('thefeed_theme', t);
+      document.documentElement.setAttribute('data-theme', t);
+      applyThemeButtons();
+    }
+    function applyThemeButtons() {
+      var cur = localStorage.getItem('thefeed_theme') || 'dark';
+      var d = document.getElementById('themeDark');
+      var l = document.getElementById('themeLight');
+      if (d) d.classList.toggle('active-theme', cur === 'dark');
+      if (l) l.classList.toggle('active-theme', cur === 'light');
+    }
+
+    // ===== LAST SEEN MESSAGES =====
+    function channelName(num) {
+      var ch = channels[num - 1];
+      return (ch && (ch.Name || ch.name)) || '';
+    }
+    function getLastSeenTimestamp(name) {
+      if (!name) return 0;
+      try { return parseInt(localStorage.getItem('thefeed_seen_ts_' + name)) || 0 } catch (e) { return 0 }
+    }
+    function setLastSeenTimestamp(name, ts) {
+      if (!name) return;
+      try { localStorage.setItem('thefeed_seen_ts_' + name, ts) } catch (e) { }
+    }
+
+    // ===== RESCAN PROMPT =====
+    function showRescanPrompt(count) {
+      return new Promise(function (resolve) {
+        var msg = t('rescan_prompt_msg').replace('{n}', count);
+        var overlay = document.createElement('div');
+        overlay.className = 'modal-overlay active';
+        overlay.innerHTML = '<div class="modal" style="max-width:380px"><h2>' + t('rescan_prompt_title') + '</h2><p style="font-size:13px;color:var(--text-dim);margin-bottom:16px;line-height:1.6">' + esc(msg) + '</p><div class="modal-actions"><button class="btn btn-primary" id="rescanPromptSkip">' + t('rescan_prompt_skip') + '</button><button class="btn btn-outline" id="rescanPromptYes">' + t('rescan_prompt_yes') + '</button></div></div>';
+        document.body.appendChild(overlay);
+        document.getElementById('rescanPromptSkip').onclick = function () { document.body.removeChild(overlay); resolve(true) };
+        document.getElementById('rescanPromptYes').onclick = function () { document.body.removeChild(overlay); resolve(false) };
+      });
+    }
+
     // ===== SETTINGS =====
-    function openSettings() { renderLatestVersion(); document.getElementById('settingsModal').classList.add('active') }
+    function openSettings() {
+      renderLatestVersion();
+      applyThemeButtons();
+      document.getElementById('settingsModal').classList.add('active');
+    }
     function closeSettings() { document.getElementById('settingsModal').classList.remove('active') }
     async function saveSettings() {
       var fs = parseInt(document.getElementById('fontSizeSlider').value) || 14;
@@ -2085,8 +2241,17 @@
 
     async function activateProfile(id) {
       if (id === activeProfileId) { closeProfiles(); return }
+      // Check if we should skip resolver check
+      var skipCheck = false;
       try {
-        var r = await fetch('/api/profiles/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id }) });
+        var stRes = await fetch('/api/status');
+        var st = await stRes.json();
+        if (st.lastScan && st.lastScan.count > 0) {
+          skipCheck = await showRescanPrompt(st.lastScan.count);
+        }
+      } catch (e) { }
+      try {
+        var r = await fetch('/api/profiles/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id, skipCheck: skipCheck }) });
         if (!r.ok) return;
         activeProfileId = id; selectedChannel = 0; channels = []; document.getElementById('progressPanel').innerHTML = ''; document.getElementById('messages').innerHTML = '<div class="empty-state"><p>' + t('switching') + '</p></div>';
         await loadProfiles(); closeProfiles();
@@ -2214,8 +2379,19 @@
       var profile = { id: editingProfileId || '', nickname: nick || domain, config: { domain: domain, key: key, resolvers: resolvers, queryMode: document.getElementById('peQueryMode').value, rateLimit: parseFloat(document.getElementById('peRateLimit').value) || 6, scatter: parseInt(document.getElementById('peScatter').value) || 4 } };
       var action = editingProfileId ? 'update' : 'create';
       var wasFirst = !profiles || !profiles.profiles || profiles.profiles.length === 0;
+      // Check if we should skip resolver check (existing healthy resolvers)
+      var skipCheck = false;
+      if (editingProfileId && editingProfileId === activeProfileId) {
+        try {
+          var stRes = await fetch('/api/status');
+          var st = await stRes.json();
+          if (st.lastScan && st.lastScan.count > 0) {
+            skipCheck = await showRescanPrompt(st.lastScan.count);
+          }
+        } catch (e) { }
+      }
       try {
-        var r = await fetch('/api/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: action, profile: profile }) });
+        var r = await fetch('/api/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: action, profile: profile, skipCheck: skipCheck }) });
         if (!r.ok) { errEl.textContent = await r.text(); errEl.style.display = 'block'; return }
         await loadProfiles();
         var savedEditId = editingProfileId;
@@ -2298,7 +2474,8 @@
             var num = ui + 1;
             existingItems[ui].classList.toggle('active', num === selectedChannel);
             var lastID = channels[ui].LastMsgID || channels[ui].lastMsgID || 0;
-            var showBadge = previousMsgIDs[num] > 0 && lastID > previousMsgIDs[num] && num !== selectedChannel;
+            var chNm = channels[ui].Name || channels[ui].name || '';
+            var showBadge = previousMsgIDs[chNm] > 0 && lastID > previousMsgIDs[chNm] && num !== selectedChannel;
             var previewEl = existingItems[ui].querySelector('.ch-preview');
             if (previewEl) previewEl.innerHTML = showBadge ? '<span class="ch-badge">NEW</span>' : '';
           }
@@ -2328,7 +2505,8 @@
           var avatarText = (avatarName || '?').charAt(0).toUpperCase();
           var active = num2 === selectedChannel ? ' active' : '';
           var lastID = e.ch.LastMsgID || e.ch.lastMsgID || 0;
-          var badge = (previousMsgIDs[num2] > 0 && lastID > previousMsgIDs[num2] && num2 !== selectedChannel) ? '<span class="ch-badge">NEW</span>' : '';
+          var chNm2 = e.ch.Name || e.ch.name || '';
+          var badge = (previousMsgIDs[chNm2] > 0 && lastID > previousMsgIDs[chNm2] && num2 !== selectedChannel) ? '<span class="ch-badge">NEW</span>' : '';
           h += '<div class="ch-item' + active + '" data-name="' + esc(name) + '" onclick="selectChannel(' + num2 + ')">';
           h += '<div class="ch-avatar">' + esc(avatarText) + '</div>';
           h += '<div class="ch-info"><div class="ch-name">' + esc(name) + (isPriv ? '<span class="ch-type-tag">' + t('private') + '</span>' : (isX ? '<span class="ch-type-tag x-tag">' + t('x_label') + '</span>' : '')) + '</div>';
@@ -2342,14 +2520,21 @@
     function _updateRefreshBadge() {
       var hasNew = false;
       for (var k = 0; k < channels.length; k++) {
-        var num3 = k + 1, lid = channels[k].LastMsgID || channels[k].lastMsgID || 0;
-        if (previousMsgIDs[num3] > 0 && lid > previousMsgIDs[num3] && num3 !== selectedChannel) { hasNew = true; break }
+        var num3 = k + 1, chNm3 = channels[k].Name || channels[k].name || '', lid = channels[k].LastMsgID || channels[k].lastMsgID || 0;
+        if (previousMsgIDs[chNm3] > 0 && lid > previousMsgIDs[chNm3] && num3 !== selectedChannel) { hasNew = true; break }
       }
       document.getElementById('refreshBtn').classList.toggle('refresh-has-new', hasNew);
     }
 
     async function selectChannel(num) {
+      // Save lastSeen for previous channel
+      if (selectedChannel > 0 && currentMaxTimestamp > 0) {
+        setLastSeenTimestamp(channelName(selectedChannel), currentMaxTimestamp);
+      }
       selectedChannel = num;
+      currentMaxMsgID = 0;
+      currentMaxTimestamp = 0;
+      newMsgScrollDone = false;
       openChat();
       var ch = channels[num - 1]; var name = (ch && (ch.Name || ch.name)) || 'Channel ' + num;
       document.getElementById('chatName').textContent = name;
@@ -2383,19 +2568,6 @@
       else panel.classList.remove('visible');
     }
 
-    // TODO: Remove cleanupOldLocalStorageKeys() once all clients have migrated.
-    // This purges thefeed_msgs_* keys written by the old HTML-side message cache.
-    function cleanupOldLocalStorageKeys() {
-      try {
-        var toDelete = [];
-        for (var i = 0; i < localStorage.length; i++) {
-          var k = localStorage.key(i);
-          if (k && k.startsWith('thefeed_msgs_')) toDelete.push(k);
-        }
-        for (var j = 0; j < toDelete.length; j++)localStorage.removeItem(toDelete[j]);
-      } catch (e) { }
-    }
-
     // ===== MESSAGES =====
     async function loadMessages(chNum) {
       try {
@@ -2404,7 +2576,7 @@
         renderMessages(data.messages || [], data.gaps || []);
         // Remove fetch progress bar for this channel
         var fetchBar = document.getElementById('prog-fetch-ch-' + chNum); if (fetchBar) fetchBar.remove();
-        if (channels[chNum - 1]) { previousMsgIDs[chNum] = channels[chNum - 1].LastMsgID || channels[chNum - 1].lastMsgID || 0; renderChannels() }
+        if (channels[chNum - 1]) { var cn = channels[chNum - 1].Name || channels[chNum - 1].name || ''; previousMsgIDs[cn] = channels[chNum - 1].LastMsgID || channels[chNum - 1].lastMsgID || 0; renderChannels() }
       } catch (e) { }
     }
 
@@ -2422,11 +2594,24 @@
       currentMsgTexts = [];
       var dateLocale = lang === 'fa' ? 'fa-IR' : 'en-US';
       var dateOpts = lang === 'fa' ? { year: 'numeric', month: 'long', day: 'numeric', calendar: 'persian' } : { year: 'numeric', month: 'long', day: 'numeric' };
+      var lastSeenTs = getLastSeenTimestamp(channelName(selectedChannel));
+      var isFirstVisit = lastSeenTs === 0;
+      var newMsgSepInserted = false;
+      var maxMsgID = 0;
+      var maxTimestamp = 0;
       for (var i = 0; i < msgs.length; i++) {
         var msg = msgs[i];
         var id = msg.ID || msg.id;
+        var msgTs = msg.Timestamp || msg.timestamp || 0;
+        if (id > maxMsgID) maxMsgID = id;
+        if (msgTs > maxTimestamp) maxTimestamp = msgTs;
         if (gapBefore[id]) {
           html += '<div class="msg-gap-sep"><span>' + t('missed_messages').replace('{n}', gapBefore[id]) + '</span></div>';
+        }
+        // New messages separator (timestamp-based for X/Telegram compatibility)
+        if (!isFirstVisit && lastSeenTs > 0 && msgTs > lastSeenTs && !newMsgSepInserted) {
+          html += '<div class="msg-new-sep" id="newMsgSep"><span>' + t('new_messages') + '</span></div>';
+          newMsgSepInserted = true;
         }
         var ts = new Date((msg.Timestamp || msg.timestamp) * 1000);
         var dateStr = ts.toLocaleDateString(dateLocale, dateOpts);
@@ -2435,17 +2620,39 @@
         var text = msg.Text || msg.text || '';
         currentMsgTexts.push(text);
         var mediaHtml = '', textHtml = esc(text);
-        var mediaTypes = ['[IMAGE]', '[VIDEO]', '[FILE]', '[AUDIO]', '[STICKER]', '[GIF]', '[POLL]', '[CONTACT]', '[LOCATION]'];
+        var mediaTypes = ['[IMAGE]', '[VIDEO]', '[FILE]', '[AUDIO]', '[STICKER]', '[GIF]', '[POLL]', '[CONTACT]', '[LOCATION]', '[REPLY]'];
         for (var m = 0; m < mediaTypes.length; m++) {
           if (text.indexOf(mediaTypes[m]) === 0) {
-            mediaHtml = '<div class="media-tag">' + mediaTypes[m] + '</div>';
+            var tagCls = mediaTypes[m] === '[REPLY]' ? 'media-tag reply-tag' : 'media-tag';
+            mediaHtml = '<div class="' + tagCls + '">' + mediaTypes[m] + '</div>';
             textHtml = esc(text.substring(mediaTypes[m].length).replace(/^\n/, '')); break
           }
         }
-        html += '<div class="msg' + (isPersian(text) ? ' rtl-msg' : '') + '" dir="auto">' + mediaHtml + textHtml + '<div class="msg-meta"><button class="msg-copy-btn" onclick="copyMsg(' + i + ')" title="' + t('copy') + '">&#128203;</button><span>#' + id + '</span><span>' + timeStr + '</span></div></div>';
+        html += '<div class="msg' + (isPersian(text) ? ' rtl-msg' : '') + '" dir="auto">' + mediaHtml + textHtml + '<div class="msg-meta"><button class="msg-copy-btn" onclick="copyMsg(' + i + ')">' + t('copy') + '</button><span>#' + id + '</span><span>' + timeStr + '</span></div></div>';
       }
       el.innerHTML = html;
-      if (isFirstRender || wasAtBottom) { el.scrollTop = el.scrollHeight; document.getElementById('scrollDownBtn').classList.remove('visible'); }
+      currentMaxMsgID = maxMsgID;
+      currentMaxTimestamp = maxTimestamp;
+      // On first visit, store max timestamp (no separator shown)
+      var chName = channelName(selectedChannel);
+      if (isFirstVisit && maxTimestamp > 0) {
+        setLastSeenTimestamp(chName, maxTimestamp);
+      }
+      // Update lastSeen when user has scrolled to the bottom (messages are "seen")
+      if (wasAtBottom && maxTimestamp > 0 && !isFirstVisit) {
+        setLastSeenTimestamp(chName, maxTimestamp);
+      }
+      // Scroll to new messages separator only on first render for this channel
+      if (newMsgSepInserted && !newMsgScrollDone) {
+        newMsgScrollDone = true;
+        setTimeout(function () {
+          var sep = document.getElementById('newMsgSep');
+          if (sep) sep.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 100);
+      } else if (isFirstRender || wasAtBottom) {
+        el.scrollTop = el.scrollHeight;
+        document.getElementById('scrollDownBtn').classList.remove('visible');
+      }
     }
 
     // ===== LOG =====
@@ -3002,6 +3209,46 @@
 
     // Handle thefeed:// URI hash import
     (function () { var h = location.hash; if (h && h.startsWith('#thefeed://')) { document.getElementById('importUriInput').value = decodeURIComponent(h.substring(1)); openProfiles(); doImportUri() } })();
+
+    // ===== AUTO-SCROLL DURING TEXT SELECTION =====
+    (function () {
+      var scrollSpeed = 0, scrollFrame = null, messagesEl = null;
+      function startAutoScroll() {
+        if (scrollFrame) return;
+        function step() {
+          if (scrollSpeed === 0 || !messagesEl) { scrollFrame = null; return }
+          messagesEl.scrollTop += scrollSpeed;
+          scrollFrame = requestAnimationFrame(step);
+        }
+        scrollFrame = requestAnimationFrame(step);
+      }
+      function stopAutoScroll() {
+        scrollSpeed = 0;
+        if (scrollFrame) { cancelAnimationFrame(scrollFrame); scrollFrame = null }
+      }
+      document.addEventListener('DOMContentLoaded', function () {
+        messagesEl = document.getElementById('messages');
+        if (!messagesEl) return;
+        var edgeZone = 40;
+        function handleMove(clientY) {
+          var sel = window.getSelection();
+          if (!sel || sel.isCollapsed) return;
+          var rect = messagesEl.getBoundingClientRect();
+          if (clientY < rect.top + edgeZone) {
+            scrollSpeed = -Math.max(2, (edgeZone - (clientY - rect.top)) / 3);
+            startAutoScroll();
+          } else if (clientY > rect.bottom - edgeZone) {
+            scrollSpeed = Math.max(2, (edgeZone - (rect.bottom - clientY)) / 3);
+            startAutoScroll();
+          } else { stopAutoScroll() }
+        }
+        messagesEl.addEventListener('touchmove', function (e) { if (e.touches[0]) handleMove(e.touches[0].clientY) });
+        messagesEl.addEventListener('touchend', stopAutoScroll);
+        messagesEl.addEventListener('touchcancel', stopAutoScroll);
+        messagesEl.addEventListener('mousemove', function (e) { if (e.buttons === 1) handleMove(e.clientY) });
+        document.addEventListener('mouseup', stopAutoScroll);
+      });
+    })();
 
     init();
   </script>

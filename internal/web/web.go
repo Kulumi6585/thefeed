@@ -769,6 +769,24 @@ func (s *Server) startCheckerThenRefresh() {
 	})
 }
 
+// skipCheckerUseSaved uses saved resolvers from the last scan and starts
+// periodic health checks without an initial scan pass.
+func (s *Server) skipCheckerUseSaved() {
+	s.mu.RLock()
+	checker := s.checker
+	ctx := s.fetcherCtx
+	fetcher := s.fetcher
+	s.mu.RUnlock()
+	if checker == nil || fetcher == nil {
+		return
+	}
+	if ls := s.loadLastScan(); ls != nil && len(ls.Resolvers) > 0 {
+		fetcher.SetActiveResolvers(ls.Resolvers)
+	}
+	checker.StartPeriodic(ctx)
+	go s.refreshMetadataOnly()
+}
+
 // nextFetchDeadline returns the Time when the server will next fetch from Telegram.
 // Returns zero value if nextFetch is not set or has already passed.
 func (s *Server) nextFetchDeadline() time.Time {
@@ -939,13 +957,13 @@ func (s *Server) refreshChannel(channelNum int) {
 		s.refreshMu.Unlock()
 	}()
 
-	// Use the cached in-memory metadata if it is fresh enough (< metaCacheTTL, default 3 min).
+	// Use the cached in-memory metadata if it is fresh enough (< metaCacheTTL, default 30 sec).
 	// This avoids a redundant metadata DNS fetch for every channel refresh.
 	// If the metadata is stale (or was never fetched), fetch it from DNS now.
 	s.mu.RLock()
 	ttl := s.metaCacheTTL
 	if ttl <= 0 {
-		ttl = 2 * time.Minute
+		ttl = 30 * time.Second
 	}
 	// Cap TTL at the time remaining until the server's next Telegram fetch.
 	// If nextFetch is sooner than our TTL the cached metadata may already be stale.
@@ -1218,9 +1236,10 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		var req struct {
-			Action  string   `json:"action"` // "create", "update", "delete", "reorder"
-			Profile Profile  `json:"profile"`
-			Order   []string `json:"order"` // for reorder
+			Action    string   `json:"action"` // "create", "update", "delete", "reorder"
+			Profile   Profile  `json:"profile"`
+			Order     []string `json:"order"` // for reorder
+			SkipCheck bool     `json:"skipCheck"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid JSON", 400)
@@ -1306,6 +1325,8 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 					s.mu.Unlock()
 					if err := s.initFetcher(); err != nil {
 						log.Printf("[web] re-init fetcher after profile change: %v", err)
+					} else if req.SkipCheck {
+						s.skipCheckerUseSaved()
 					} else {
 						s.startCheckerThenRefresh()
 					}
@@ -1328,7 +1349,8 @@ func (s *Server) handleProfileSwitch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ID string `json:"id"`
+		ID        string `json:"id"`
+		SkipCheck bool   `json:"skipCheck"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON", 400)
@@ -1373,7 +1395,11 @@ func (s *Server) handleProfileSwitch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("init fetcher: %v", err), 500)
 		return
 	}
-	s.startCheckerThenRefresh()
+	if req.SkipCheck {
+		s.skipCheckerUseSaved()
+	} else {
+		s.startCheckerThenRefresh()
+	}
 	writeJSON(w, map[string]any{"ok": true})
 }
 

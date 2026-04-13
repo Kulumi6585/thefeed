@@ -132,6 +132,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	if xReader != nil {
 		dnsServer.AddRefresher(xReader)
+		dnsServer.SetXReader(xReader)
 	}
 	return dnsServer.ListenAndServe(ctx)
 }

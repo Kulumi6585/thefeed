@@ -120,7 +120,7 @@ func TestParsePublicMessagesReplyPreviewUsesMainBody(t *testing.T) {
 	if len(msgs) != 1 {
 		t.Fatalf("len(msgs) = %d, want 1", len(msgs))
 	}
-	if msgs[0].Text != "this is the real new post" {
-		t.Fatalf("msgs[0].Text = %q, want %q", msgs[0].Text, "this is the real new post")
+	if msgs[0].Text != "[REPLY]\nthis is the real new post" {
+		t.Fatalf("msgs[0].Text = %q, want %q", msgs[0].Text, "[REPLY]\nthis is the real new post")
 	}
 }

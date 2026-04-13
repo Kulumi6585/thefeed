@@ -56,6 +56,7 @@ const (
 	MediaPoll     = "[POLL]"
 	MediaContact  = "[CONTACT]"
 	MediaLocation = "[LOCATION]"
+	MediaReply    = "[REPLY]"
 )
 
 // ChatType distinguishes channel types in metadata.

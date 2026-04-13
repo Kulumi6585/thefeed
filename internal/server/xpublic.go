@@ -150,9 +150,26 @@ func (xr *XPublicReader) RequestRefresh() {
 
 func (xr *XPublicReader) UpdateChannels(_ []string) {}
 
+// SetBaseCh updates the base channel number when Telegram channels are added/removed.
+func (xr *XPublicReader) SetBaseCh(baseCh int) {
+	xr.mu.Lock()
+	xr.baseCh = baseCh
+	xr.mu.Unlock()
+}
+
 func (xr *XPublicReader) fetchAll(ctx context.Context) {
+	xr.mu.RLock()
+	baseCh := xr.baseCh
+	xr.mu.RUnlock()
+
+	// Always set ChatType for all X accounts upfront, so channels show the X flag
+	// even if the Nitter fetch fails or the cache is still valid.
+	for i := range xr.accounts {
+		xr.feed.SetChatInfo(baseCh+i, protocol.ChatTypeX, false)
+	}
+
 	for i, account := range xr.accounts {
-		chNum := xr.baseCh + i
+		chNum := baseCh + i
 
 		xr.mu.RLock()
 		cached, ok := xr.cache[account]
@@ -179,7 +196,6 @@ func (xr *XPublicReader) fetchAll(ctx context.Context) {
 		xr.mu.Unlock()
 
 		xr.feed.UpdateChannel(chNum, msgs)
-		xr.feed.SetChatInfo(chNum, protocol.ChatTypeX, false)
 		log.Printf("[x] updated @%s: %d posts", account, len(msgs))
 	}
 }

@@ -242,6 +242,10 @@ func parsePublicMessages(body []byte) ([]protocol.Message, error) {
 		if text == "" {
 			return
 		}
+		// Detect replies by checking for the reply preview element.
+		if findFirstByClass(n, "tgme_widget_message_reply") != nil {
+			text = protocol.MediaReply + "\n" + text
+		}
 		collected = append(collected, publicMessage{
 			id:        id,
 			timestamp: extractMessageTimestamp(n),
