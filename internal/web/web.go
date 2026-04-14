@@ -668,7 +668,7 @@ func (s *Server) initFetcher() error {
 	if s.fetcher != nil {
 		prevStats = s.fetcher.ExportStats()
 		// Persist accumulated stats before destroying the old fetcher.
-		go s.persistResolverScores(prevStats)
+		s.persistResolverScores(prevStats)
 	}
 	if s.fetcherCancel != nil {
 		s.fetcherCancel()
@@ -1673,7 +1673,11 @@ func (s *Server) saveProfiles(pl *ProfileList) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 func generateID() string {
