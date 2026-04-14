@@ -3122,6 +3122,7 @@
         setTimeout(function () { if (item.parentNode) item.parentNode.removeChild(item) }, 2000);
         // Scan is done — load channels in case the SSE 'update' event was dropped.
         setTimeout(function () { loadChannels().then(function () { if (channels.length > 0 && selectedChannel === 0) selectChannel(1) }) }, 3000);
+        refreshResolversBadge();
       }
     }
 

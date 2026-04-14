@@ -1412,7 +1412,11 @@ func (s *Server) handleResolverBank(w http.ResponseWriter, r *http.Request) {
 			liveStats = s.fetcher.ExportStats()
 			activeSet = make(map[string]bool)
 			for _, r := range s.fetcher.Resolvers() {
-				activeSet[r] = true
+				k := r
+				if !strings.Contains(k, ":") {
+					k += ":53"
+				}
+				activeSet[k] = true
 			}
 		}
 		s.mu.RUnlock()
@@ -1431,11 +1435,11 @@ func (s *Server) handleResolverBank(w http.ResponseWriter, r *http.Request) {
 
 		var bank []bankResolver
 		for _, addr := range pl.ResolverBank {
-			br := bankResolver{Addr: addr, Active: activeSet[addr]}
 			key := addr
 			if !strings.Contains(key, ":") {
 				key += ":53"
 			}
+			br := bankResolver{Addr: addr, Active: activeSet[key]}
 			// Prefer live stats, fall back to saved scores.
 			if liveStats != nil {
 				if st, ok := liveStats[key]; ok {
