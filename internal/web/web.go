@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	mrand "math/rand/v2"
@@ -54,8 +55,10 @@ type ProfileList struct {
 	Active   string    `json:"active"` // ID of active profile
 	Profiles []Profile `json:"profiles"`
 	// FontSize stores user's preferred font size (0 = default 14).
-	FontSize int  `json:"fontSize,omitempty"`
-	Debug    bool `json:"debug,omitempty"`
+	FontSize int    `json:"fontSize,omitempty"`
+	Debug    bool   `json:"debug,omitempty"`
+	Theme    string `json:"theme,omitempty"`
+	Lang     string `json:"lang,omitempty"`
 }
 
 // lastScanData is the on-disk structure for last_scan.json.
@@ -186,6 +189,7 @@ func (s *Server) Run() error {
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/version-check", s.handleVersionCheck)
 	mux.HandleFunc("/api/cache/clear", s.handleClearCache)
+	mux.HandleFunc("/api/bg-image", s.handleBgImage)
 	mux.HandleFunc("/api/resolvers/apply-saved", s.handleApplySavedResolvers)
 	mux.HandleFunc("/api/resolvers/active", s.handleActiveResolvers)
 	mux.HandleFunc("/api/resolvers/remove", s.handleRemoveResolver)
@@ -1482,12 +1486,14 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if pl == nil {
 			pl = &ProfileList{}
 		}
-		writeJSON(w, map[string]any{"fontSize": pl.FontSize, "debug": pl.Debug, "version": version.Version, "commit": version.Commit})
+		writeJSON(w, map[string]any{"fontSize": pl.FontSize, "debug": pl.Debug, "theme": pl.Theme, "lang": pl.Lang, "version": version.Version, "commit": version.Commit})
 
 	case http.MethodPost:
 		var req struct {
-			FontSize int  `json:"fontSize"`
-			Debug    bool `json:"debug"`
+			FontSize int    `json:"fontSize"`
+			Debug    bool   `json:"debug"`
+			Theme    string `json:"theme"`
+			Lang     string `json:"lang"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid JSON", 400)
@@ -1505,6 +1511,12 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		pl.FontSize = req.FontSize
 		pl.Debug = req.Debug
+		if req.Theme == "dark" || req.Theme == "light" {
+			pl.Theme = req.Theme
+		}
+		if req.Lang == "fa" || req.Lang == "en" {
+			pl.Lang = req.Lang
+		}
 		if err := s.saveProfiles(pl); err != nil {
 			http.Error(w, fmt.Sprintf("save: %v", err), 500)
 			return
@@ -1517,6 +1529,50 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			f.SetDebug(req.Debug)
 		}
 		s.scanner.SetDebug(req.Debug)
+		writeJSON(w, map[string]any{"ok": true})
+
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+func (s *Server) handleBgImage(w http.ResponseWriter, r *http.Request) {
+	bgPath := filepath.Join(s.dataDir, "bg_image")
+	switch r.Method {
+	case http.MethodGet:
+		data, err := os.ReadFile(bgPath)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.WriteHeader(204)
+			return
+		}
+		// Detect content type from file data.
+		ct := http.DetectContentType(data)
+		w.Header().Set("Content-Type", ct)
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Write(data)
+
+	case http.MethodPost:
+		// Limit upload to 10 MB.
+		r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "file too large (max 10MB)", 413)
+			return
+		}
+		ct := http.DetectContentType(data)
+		if !strings.HasPrefix(ct, "image/") {
+			http.Error(w, "not an image", 400)
+			return
+		}
+		if err := os.WriteFile(bgPath, data, 0600); err != nil {
+			http.Error(w, fmt.Sprintf("save: %v", err), 500)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true})
+
+	case http.MethodDelete:
+		os.Remove(bgPath)
 		writeJSON(w, map[string]any{"ok": true})
 
 	default:

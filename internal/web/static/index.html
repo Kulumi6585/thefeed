@@ -2060,7 +2060,12 @@
       // Re-render dynamic content
       if (channels.length > 0) renderChannels();
     }
-    function setLang(l) { lang = l; localStorage.setItem('thefeed_lang', l); applyLang() }
+    function setLang(l) {
+      lang = l;
+      localStorage.setItem('thefeed_lang', l);
+      applyLang();
+      fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lang: l }) }).catch(function () { });
+    }
 
     // ===== STATE =====
     var selectedChannel = 0, channels = [], eventSource = null, autoRefreshTimer = null, telegramLoggedIn = false, logVisible = false;
@@ -2124,6 +2129,16 @@
           document.getElementById('fontSizeVal').textContent = s.fontSize;
         }
         if (s.debug) document.getElementById('cfgDebug').checked = true;
+        if (s.theme && (s.theme === 'dark' || s.theme === 'light')) {
+          localStorage.setItem('thefeed_theme', s.theme);
+          document.documentElement.setAttribute('data-theme', s.theme);
+          applyThemeButtons();
+        }
+        if (s.lang && (s.lang === 'fa' || s.lang === 'en')) {
+          lang = s.lang;
+          localStorage.setItem('thefeed_lang', s.lang);
+          applyLang();
+        }
         if (s.version) { appVersion = s.version; renderAppVersion(s.version, s.commit); }
         renderLatestVersion();
       } catch (e) { }
@@ -2181,6 +2196,7 @@
       localStorage.setItem('thefeed_theme', t);
       document.documentElement.setAttribute('data-theme', t);
       applyThemeButtons();
+      fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: t }) }).catch(function () { });
     }
     function applyThemeButtons() {
       var cur = localStorage.getItem('thefeed_theme') || 'dark';
@@ -3620,34 +3636,36 @@
     }
 
     // ===== BACKGROUND IMAGE =====
-    function _setBg(data) {
+    function _setBg(url) {
       var ca = document.querySelector('.chat-area');
-      ca.style.backgroundImage = data ? 'url("' + data + '")' : '';
-      ca.style.backgroundSize = data ? 'cover' : '';
-      ca.style.backgroundPosition = data ? 'center' : '';
-      ca.style.backgroundRepeat = data ? 'no-repeat' : '';
-      document.getElementById('messages').style.background = data ? 'transparent' : '';
+      ca.style.backgroundImage = url ? 'url("' + url + '")' : '';
+      ca.style.backgroundSize = url ? 'cover' : '';
+      ca.style.backgroundPosition = url ? 'center' : '';
+      ca.style.backgroundRepeat = url ? 'no-repeat' : '';
+      document.getElementById('messages').style.background = url ? 'transparent' : '';
     }
     function loadBgImage() {
-      var data = localStorage.getItem('thefeed_bg_image') || '';
-      if (data) _setBg(data);
+      // Use cache-busting query to ensure latest image.
+      var url = '/api/bg-image?t=' + Date.now();
+      fetch(url).then(function (r) {
+        if (r.status === 204 || !r.ok) return;
+        _setBg('/api/bg-image?t=' + Date.now());
+      }).catch(function () { });
     }
-    function applyBgImage() {
+    async function applyBgImage() {
       var inp = document.getElementById('bgImageInput');
       if (!inp.files || !inp.files[0]) return;
       var file = inp.files[0];
-      if (file.size > 5 * 1024 * 1024) { showToast('File too large (max 5MB)'); return }
-      var reader = new FileReader();
-      reader.onload = function (e) {
-        var data = e.target.result;
-        try { localStorage.setItem('thefeed_bg_image', data) } catch (ex) { showToast('File too large for storage'); return }
-        _setBg(data);
+      if (file.size > 10 * 1024 * 1024) { showToast('File too large (max 10MB)'); return }
+      try {
+        var r = await fetch('/api/bg-image', { method: 'POST', body: file });
+        if (!r.ok) { showToast(await r.text()); return }
+        _setBg('/api/bg-image?t=' + Date.now());
         showToast(t('apply'));
-      };
-      reader.readAsDataURL(file);
+      } catch (e) { showToast(e.message); }
     }
-    function clearBgImage() {
-      localStorage.removeItem('thefeed_bg_image');
+    async function clearBgImage() {
+      try { await fetch('/api/bg-image', { method: 'DELETE' }) } catch (e) { }
       _setBg('');
       document.getElementById('bgImageInput').value = '';
       showToast(t('clear_bg'));
