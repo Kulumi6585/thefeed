@@ -26,7 +26,7 @@ func main() {
 	key := flag.String("key", "", "Encryption passphrase")
 	channelsFile := flag.String("channels", "", "Path to channels file (default: {data-dir}/channels.txt)")
 	xAccountsFile := flag.String("x-accounts", "", "Path to X accounts file (default: {data-dir}/x_accounts.txt)")
-	xRSSInstances := flag.String("x-rss-instances", "", "Comma-separated X RSS base URLs (e.g., http://nitter.net,https://nitter.net)")
+	xRSSInstances := flag.String("x-rss-instances", "", "Comma-separated X RSS base URLs (e.g., https://nitter.net,http://nitter.net)")
 	apiID := flag.String("api-id", "", "Telegram API ID (optional if --no-telegram)")
 	apiHash := flag.String("api-hash", "", "Telegram API Hash (optional if --no-telegram)")
 	phone := flag.String("phone", "", "Telegram phone number (optional if --no-telegram)")

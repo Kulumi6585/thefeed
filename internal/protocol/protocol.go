@@ -9,6 +9,7 @@ import (
 	"hash/crc32"
 	"io"
 	"math/big"
+	"unicode/utf8"
 )
 
 const (
@@ -268,8 +269,15 @@ func ParseMessages(data []byte) ([]Message, error) {
 		if off+textLen > len(data) {
 			break // incomplete message text, stop
 		}
-		text := string(data[off : off+textLen])
+		textBytes := data[off : off+textLen]
 		off += textLen
+
+		// Skip messages with invalid UTF-8 text — these are artifacts of
+		// corrupt/decompression-failed data, not real messages.
+		if !utf8.Valid(textBytes) {
+			continue
+		}
+		text := string(textBytes)
 
 		msgs = append(msgs, Message{
 			ID:        id,

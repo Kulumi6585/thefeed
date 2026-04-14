@@ -25,7 +25,8 @@ DNS-based feed reader for Telegram channels and public X accounts. Designed for 
 **Client** (runs inside censored network):
 - Browser-based web UI with RTL/Farsi support (VazirMatn font)
 - Sends encrypted DNS TXT queries via available resolvers
-- **Resolver scoring**: tracks per-resolver success rate and latency; healthier resolvers are preferred automatically
+- **Resolver Bank**: shared pool of DNS resolvers used across all profiles — no more per-profile resolver lists. Resolvers are added via scanner, import, or manual entry and scored automatically
+- **Resolver scoring**: tracks per-resolver success rate and latency with persistent scores; healthier resolvers are preferred automatically. Users can clean up low-scoring resolvers from the bank
 - **Scatter mode**: fans out the same DNS request to multiple resolvers simultaneously and uses the fastest response (default: 2 concurrent resolvers per request)
 - Send messages to channels and private chats (requires server `--allow-manage` and login to telegram)
 - Channel management (add/remove channels remotely via admin commands when `--allow-manage` is enabled)
@@ -41,6 +42,7 @@ DNS-based feed reader for Telegram channels and public X accounts. Designed for 
 
 - Variable response and query sizes to prevent fingerprinting
 - Multiple query encoding modes for stealth
+- **Resolver Bank**: centralized resolver pool shared by all profiles with persistent scoring and cleanup tools
 - **Resolver scoring**: per-resolver success-rate + latency scoreboard; high-scoring resolvers are picked more often via weighted-random selection
 - **Scatter mode**: same block fetched from N resolvers simultaneously, first response wins — faster fetches and implicit failover
 - Rate limiting and background noise traffic to blend in
@@ -247,7 +249,7 @@ Environment variables: `THEFEED_DOMAIN`, `THEFEED_KEY`, `THEFEED_MSG_LIMIT`, `TH
 | `--key` | | Encryption passphrase (required) |
 | `--channels` | `{data-dir}/channels.txt` | Path to channels file |
 | `--x-accounts` | `{data-dir}/x_accounts.txt` | Path to X usernames file |
-| `--x-rss-instances` | `http://nitter.net,https://nitter.net` | Comma-separated X RSS base URLs |
+| `--x-rss-instances` | `https://nitter.net,http://nitter.net` | Comma-separated X RSS base URLs |
 | `--api-id` | | Telegram API ID (required) |
 | `--api-hash` | | Telegram API Hash (required) |
 | `--phone` | | Telegram phone number (required) |
@@ -276,7 +278,7 @@ make build-client
 ./build/thefeed-client --password "your-secret"
 ```
 
-On first run, the client creates a `./thefeeddata/` directory next to where you run it. Open `http://127.0.0.1:8080` in your browser and configure your domain, passphrase, and resolvers through the Settings page.
+On first run, the client creates a `./thefeeddata/` directory next to where you run it. Open `http://127.0.0.1:8080` in your browser and configure your domain and passphrase through the Settings page. DNS resolvers are managed in the shared Resolver Bank (accessible from the sidebar), which is used by all profiles.
 
 All configuration, cache, and data files are stored in the data directory.
 

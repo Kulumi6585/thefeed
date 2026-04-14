@@ -133,8 +133,8 @@ func (f *Fetcher) ScanConcurrency() int {
 		return 10
 	}
 	n := int(f.rateQPS)
-	if n < 1 {
-		n = 1
+	if n < 10 {
+		n = 10
 	}
 	return n
 }
@@ -176,6 +176,29 @@ func (f *Fetcher) SetResolvers(resolvers []string) {
 	copy(f.allResolvers, resolvers)
 	f.activeResolvers = make([]string, len(resolvers))
 	copy(f.activeResolvers, resolvers)
+}
+
+// UpdateResolverPool replaces the full resolver list but keeps the existing
+// active pool intact (only pruning resolvers that are no longer in the bank).
+// New bank entries are added to allResolvers but NOT automatically activated.
+func (f *Fetcher) UpdateResolverPool(resolvers []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	bankSet := make(map[string]bool, len(resolvers))
+	for _, r := range resolvers {
+		bankSet[r] = true
+	}
+	// Prune active resolvers that were removed from the bank.
+	filtered := make([]string, 0, len(f.activeResolvers))
+	for _, r := range f.activeResolvers {
+		if bankSet[r] {
+			filtered = append(filtered, r)
+		}
+	}
+	f.allResolvers = make([]string, len(resolvers))
+	copy(f.allResolvers, resolvers)
+	f.activeResolvers = filtered
+	f.log("resolver pool updated: %d total, %d active", len(f.allResolvers), len(f.activeResolvers))
 }
 
 // RemoveActiveResolver removes a resolver from the active pool.
@@ -653,11 +676,32 @@ func (f *Fetcher) FetchLatestVersion(ctx context.Context) (string, error) {
 	return protocol.DecodeVersionData(data)
 }
 
+// ErrContentHashMismatch is returned when the fetched messages do not match
+// the expected content hash from metadata.  This typically means the server
+// regenerated its blocks between the metadata fetch and the block fetch
+// (block-version race).  The caller should re-fetch metadata and retry.
+var ErrContentHashMismatch = fmt.Errorf("content hash mismatch")
+
 // FetchChannel fetches all blocks for a channel and returns the parsed messages.
 // Cancelling ctx immediately aborts any queued or in-flight block fetches.
 // Each block is retried individually via FetchBlock before the channel fetch fails.
 func (f *Fetcher) FetchChannel(ctx context.Context, channelNum int, blockCount int) ([]protocol.Message, error) {
 	return f.fetchChannelBlocks(ctx, channelNum, blockCount, f.FetchBlock)
+}
+
+// FetchChannelVerified works like FetchChannel but additionally verifies that
+// the parsed messages match the expected content hash from metadata.
+// Returns ErrContentHashMismatch when the hash does not match (block-version race).
+func (f *Fetcher) FetchChannelVerified(ctx context.Context, channelNum int, blockCount int, expectedHash uint32) ([]protocol.Message, error) {
+	msgs, err := f.fetchChannelBlocks(ctx, channelNum, blockCount, f.FetchBlock)
+	if err != nil {
+		return nil, err
+	}
+	if got := protocol.ContentHashOf(msgs); got != expectedHash {
+		f.log("Channel %d content hash mismatch: got %08x, want %08x (block-version race?)", channelNum, got, expectedHash)
+		return nil, ErrContentHashMismatch
+	}
+	return msgs, nil
 }
 
 func (f *Fetcher) fetchChannelBlocks(ctx context.Context, channelNum int, blockCount int, fetchFn func(context.Context, uint16, uint16) ([]byte, error)) ([]protocol.Message, error) {
@@ -725,7 +769,13 @@ func (f *Fetcher) fetchChannelBlocks(ctx context.Context, channelNum int, blockC
 	// Decompress if data has compression header
 	decompressed, err := protocol.DecompressMessages(allData)
 	if err != nil {
-		// Fall back to raw parse for backward compatibility with uncompressed data
+		// If the data starts with a known compression header but decompression
+		// failed, the data is corrupt — do NOT raw-parse compressed bytes as
+		// messages (that produces binary garbage as message text).
+		if len(allData) > 0 && (allData[0] == 0x00 || allData[0] == 0x01) {
+			return nil, fmt.Errorf("decompress channel %d: %w", channelNum, err)
+		}
+		// Unknown header → pre-compression era data; try raw parse.
 		return protocol.ParseMessages(allData)
 	}
 

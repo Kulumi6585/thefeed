@@ -194,7 +194,7 @@ func (s *Server) handleScannerApply(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Determine which profile to apply to.
+	// Determine which profile to apply to (for logging purposes / active check).
 	pl, _ := s.loadProfiles()
 	if pl == nil {
 		http.Error(w, "no profiles configured", 400)
@@ -218,41 +218,21 @@ func (s *Server) handleScannerApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var newResolvers []string
+	// Update the shared resolver bank instead of per-profile resolvers.
 	if req.Mode == "overwrite" {
-		newResolvers = resolvers
+		pl.ResolverBank = resolvers
 	} else {
-		// Append — deduplicate.
-		seen := make(map[string]bool)
-		for _, r := range pl.Profiles[targetIdx].Config.Resolvers {
-			seen[r] = true
-			newResolvers = append(newResolvers, r)
-		}
-		for _, r := range resolvers {
-			if !seen[r] {
-				newResolvers = append(newResolvers, r)
-			}
-		}
+		// Append — deduplicate against existing bank.
+		addToBank(pl, resolvers)
 	}
 
-	pl.Profiles[targetIdx].Config.Resolvers = newResolvers
 	if err := s.saveProfiles(pl); err != nil {
 		http.Error(w, fmt.Sprintf("save profiles: %v", err), 500)
 		return
 	}
 
-	// If this is the active profile, also update config + fetcher.
+	// If this is the active profile, re-init the fetcher with the updated bank.
 	if targetProfileID == pl.Active {
-		s.mu.Lock()
-		cfg := s.config
-		s.mu.Unlock()
-		if cfg != nil {
-			cfg.Resolvers = newResolvers
-			_ = s.saveConfig(cfg)
-			s.mu.Lock()
-			s.config = cfg
-			s.mu.Unlock()
-		}
 		// Cancel any in-progress checker scan before re-initializing so the
 		// old goroutine exits quickly and doesn't race with the new fetcher.
 		s.mu.RLock()
@@ -274,8 +254,8 @@ func (s *Server) handleScannerApply(w http.ResponseWriter, r *http.Request) {
 		ctx := s.fetcherCtx
 		s.mu.RUnlock()
 		if fetcher != nil {
-			fetcher.SetActiveResolvers(newResolvers)
-			s.saveLastScan(newResolvers)
+			fetcher.SetActiveResolvers(resolvers)
+			s.saveLastScan(resolvers)
 		}
 		if checker != nil && ctx != nil {
 			checker.StartPeriodic(ctx)
@@ -284,5 +264,5 @@ func (s *Server) handleScannerApply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.addLog(fmt.Sprintf("Scanner resolvers applied: %d resolvers (%s) to profile %s", len(resolvers), req.Mode, pl.Profiles[targetIdx].Nickname))
-	writeJSON(w, map[string]any{"ok": true, "count": len(newResolvers)})
+	writeJSON(w, map[string]any{"ok": true, "count": len(pl.ResolverBank)})
 }

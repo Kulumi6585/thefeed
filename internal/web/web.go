@@ -7,6 +7,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -15,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -53,6 +55,13 @@ type Profile struct {
 	Config   Config `json:"config"`
 }
 
+// SavedResolverScore stores persistent resolver performance data.
+type SavedResolverScore struct {
+	Success int64 `json:"success"`
+	Failure int64 `json:"failure"`
+	TotalMs int64 `json:"totalMs"`
+}
+
 // ProfileList is the on-disk structure for profiles.json.
 type ProfileList struct {
 	Active   string    `json:"active"` // ID of active profile
@@ -62,6 +71,10 @@ type ProfileList struct {
 	Debug    bool   `json:"debug,omitempty"`
 	Theme    string `json:"theme,omitempty"`
 	Lang     string `json:"lang,omitempty"`
+	// ResolverBank is the shared pool of DNS resolvers used by all profiles.
+	ResolverBank []string `json:"resolverBank,omitempty"`
+	// ResolverScores stores accumulated performance data for bank resolvers.
+	ResolverScores map[string]*SavedResolverScore `json:"resolverScores,omitempty"`
 }
 
 // lastScanData is the on-disk structure for last_scan.json.
@@ -146,6 +159,9 @@ func New(dataDir string, port int, password string) (*Server, error) {
 		scanner:         scanner,
 	}
 
+	// Migrate per-profile resolvers into the shared bank on first run.
+	s.migrateResolverBank()
+
 	cfg, err := s.loadConfig()
 	if err == nil {
 		s.config = cfg
@@ -197,6 +213,8 @@ func (s *Server) Run() error {
 	mux.HandleFunc("/api/resolvers/active", s.handleActiveResolvers)
 	mux.HandleFunc("/api/resolvers/remove", s.handleRemoveResolver)
 	mux.HandleFunc("/api/resolvers/reset-stats", s.handleResetResolverStats)
+	mux.HandleFunc("/api/resolvers/bank", s.handleResolverBank)
+	mux.HandleFunc("/api/resolvers/bank/cleanup", s.handleResolverBankCleanup)
 	mux.HandleFunc("/api/scanner/start", s.handleScannerStart)
 	mux.HandleFunc("/api/scanner/stop", s.handleScannerStop)
 	mux.HandleFunc("/api/scanner/pause", s.handleScannerPause)
@@ -310,6 +328,15 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		if cfg.Domain == "" || cfg.Key == "" || len(cfg.Resolvers) == 0 {
 			http.Error(w, "domain, key, and resolvers are required", 400)
 			return
+		}
+		// Add config resolvers to the shared bank.
+		if len(cfg.Resolvers) > 0 {
+			pl, _ := s.loadProfiles()
+			if pl == nil {
+				pl = &ProfileList{}
+			}
+			addToBank(pl, cfg.Resolvers)
+			_ = s.saveProfiles(pl)
 		}
 		if err := s.saveConfig(&cfg); err != nil {
 			http.Error(w, fmt.Sprintf("save config: %v", err), 500)
@@ -640,6 +667,8 @@ func (s *Server) initFetcher() error {
 	var prevStats map[string][3]int64
 	if s.fetcher != nil {
 		prevStats = s.fetcher.ExportStats()
+		// Persist accumulated stats before destroying the old fetcher.
+		go s.persistResolverScores(prevStats)
 	}
 	if s.fetcherCancel != nil {
 		s.fetcherCancel()
@@ -650,29 +679,53 @@ func (s *Server) initFetcher() error {
 		return fmt.Errorf("no config")
 	}
 
+	// Load the shared resolver bank and preferences from profiles.json.
+	var bankResolvers []string
+	var debug bool
+	var savedScores map[string]*SavedResolverScore
+	if pl, plErr := s.loadProfiles(); plErr == nil {
+		debug = pl.Debug
+		if len(pl.ResolverBank) > 0 {
+			bankResolvers = pl.ResolverBank
+		}
+		savedScores = pl.ResolverScores
+	}
+
+	// Use resolver bank; fall back to per-profile resolvers for backward compat.
+	resolvers := cfg.Resolvers
+	if len(bankResolvers) > 0 {
+		resolvers = bankResolvers
+	}
+
 	cacheDir := filepath.Join(s.dataDir, "cache")
 	cache, err := client.NewCache(cacheDir)
 	if err != nil {
 		return fmt.Errorf("create cache: %w", err)
 	}
 
-	fetcher, err := client.NewFetcher(cfg.Domain, cfg.Key, cfg.Resolvers)
+	fetcher, err := client.NewFetcher(cfg.Domain, cfg.Key, resolvers)
 	if err != nil {
 		return fmt.Errorf("create fetcher: %w", err)
 	}
 
-	// Restore resolver stats from the previous fetcher.
+	// Restore resolver stats: prefer in-memory stats from the previous fetcher,
+	// fall back to persisted scores for fresh starts.
 	if prevStats != nil {
 		fetcher.ImportStats(prevStats)
+	} else if len(savedScores) > 0 {
+		m := make(map[string][3]int64)
+		for addr, ss := range savedScores {
+			key := addr
+			if !strings.Contains(key, ":") {
+				key += ":53"
+			}
+			m[key] = [3]int64{ss.Success, ss.Failure, ss.TotalMs}
+		}
+		fetcher.ImportStats(m)
 	}
 
 	if cfg.QueryMode == "double" {
 		fetcher.SetQueryMode(protocol.QueryMultiLabel)
-	}
-	// Use global debug preference from profiles.json.
-	var debug bool
-	if pl, err := s.loadProfiles(); err == nil {
-		debug = pl.Debug
 	}
 	fetcher.SetDebug(debug)
 	s.scanner.SetDebug(debug)
@@ -731,16 +784,22 @@ func (s *Server) checkLatestVersion(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("no config")
 	}
 
-	fetcher, err := client.NewFetcher(cfg.Domain, cfg.Key, cfg.Resolvers)
+	// Use resolver bank; fall back to per-profile resolvers.
+	resolvers := cfg.Resolvers
+	var debug bool
+	if pl, plErr := s.loadProfiles(); plErr == nil {
+		debug = pl.Debug
+		if len(pl.ResolverBank) > 0 {
+			resolvers = pl.ResolverBank
+		}
+	}
+
+	fetcher, err := client.NewFetcher(cfg.Domain, cfg.Key, resolvers)
 	if err != nil {
 		return "", fmt.Errorf("create fetcher: %w", err)
 	}
 	if cfg.QueryMode == "double" {
 		fetcher.SetQueryMode(protocol.QueryMultiLabel)
-	}
-	var debug bool
-	if pl, err := s.loadProfiles(); err == nil {
-		debug = pl.Debug
 	}
 	fetcher.SetDebug(debug)
 	s.scanner.SetDebug(debug)
@@ -758,7 +817,7 @@ func (s *Server) checkLatestVersion(ctx context.Context) (string, error) {
 	fetcher.SetLogFunc(func(msg string) {
 		s.addLog(msg)
 	})
-	fetcher.SetActiveResolvers(cfg.Resolvers)
+	fetcher.SetActiveResolvers(resolvers)
 
 	checkCtx, cancel := context.WithTimeout(ctx, timeout*3)
 	defer cancel()
@@ -794,6 +853,8 @@ func (s *Server) startCheckerThenRefresh() {
 
 // skipCheckerUseSaved uses saved resolvers from the last scan and starts
 // periodic health checks without an initial scan pass.
+// If no saved resolvers are available, falls back to a full scan with
+// retry-every-minute until at least one resolver is found.
 func (s *Server) skipCheckerUseSaved() {
 	s.mu.RLock()
 	checker := s.checker
@@ -805,9 +866,14 @@ func (s *Server) skipCheckerUseSaved() {
 	}
 	if ls := s.loadLastScan(); ls != nil && len(ls.Resolvers) > 0 {
 		fetcher.SetActiveResolvers(ls.Resolvers)
+		checker.StartPeriodic(ctx)
+		go s.refreshMetadataOnly()
+	} else {
+		// No saved resolvers — do a full scan (with retry-every-minute).
+		checker.StartAndNotify(ctx, func() {
+			s.refreshMetadataOnly()
+		})
 	}
-	checker.StartPeriodic(ctx)
-	go s.refreshMetadataOnly()
 }
 
 // nextFetchDeadline returns the Time when the server will next fetch from Telegram.
@@ -827,10 +893,10 @@ func (s *Server) nextFetchDeadline() time.Time {
 }
 
 // waitForServerFetch blocks until the server's Telegram fetch is likely complete
-// (nextFetch + 45 s), emitting a countdown progress event each second so the UI
+// (nextFetch + 30 s), emitting a countdown progress event each second so the UI
 // can render a live progress bar. Returns true on completion, false if ctx cancelled.
 func (s *Server) waitForServerFetch(ctx context.Context, nf uint32) bool {
-	const serverFetchDuration = 45 * time.Second
+	const serverFetchDuration = 30 * time.Second
 	deadline := time.Unix(int64(nf), 0).Add(serverFetchDuration)
 	totalWait := time.Until(deadline)
 	if totalWait <= 0 {
@@ -905,8 +971,8 @@ func (s *Server) refreshMetadataOnly() {
 
 	s.addLog(fmt.Sprintf("Fetching metadata... (%d active resolvers)", len(fetcher.Resolvers())))
 
-	// If the server's next Telegram fetch is imminent (within 5 s), wait for it first.
-	if dl := s.nextFetchDeadline(); !dl.IsZero() && time.Until(dl) < 5*time.Second {
+	// If the server's next Telegram fetch is imminent (within 15 s), wait for it first.
+	if dl := s.nextFetchDeadline(); !dl.IsZero() && time.Until(dl) < 15*time.Second {
 		s.mu.RLock()
 		nf := s.nextFetch
 		s.mu.RUnlock()
@@ -1081,14 +1147,89 @@ func (s *Server) refreshChannel(channelNum int) {
 		s.mu.RLock()
 		fetchNF = s.nextFetch
 		s.mu.RUnlock()
-		fetchCtx, fetchCancel = context.WithDeadline(ctx, dl)
-		defer fetchCancel()
+
+		// If the server's next refresh is within 15 seconds, wait for it rather
+		// than risking a block-version race (metadata says N blocks but the
+		// server regenerates them mid-download).
+		if time.Until(dl) < 15*time.Second {
+			s.addLog("Server refresh imminent — waiting before fetching blocks")
+			if !s.waitForServerFetch(ctx, fetchNF) {
+				return
+			}
+			// Re-fetch metadata after the server refresh to get fresh block counts.
+			freshMeta, freshErr := fetcher.FetchMetadata(ctx)
+			if freshErr != nil {
+				if ctx.Err() != nil {
+					s.addLog("Refresh cancelled")
+					return
+				}
+				s.addLog(fmt.Sprintf("Channel %s error refreshing metadata: %v", ch.Name, freshErr))
+				return
+			}
+			s.mu.Lock()
+			s.channels = freshMeta.Channels
+			s.telegramLoggedIn = freshMeta.TelegramLoggedIn
+			s.nextFetch = freshMeta.NextFetch
+			s.metaFetchedAt = time.Now()
+			s.mu.Unlock()
+			if cache != nil {
+				_ = cache.PutMetadata(freshMeta)
+			}
+			if channelNum < 1 || channelNum > len(freshMeta.Channels) {
+				return
+			}
+			ch = freshMeta.Channels[channelNum-1]
+			blockCount = int(ch.Blocks)
+			if blockCount <= 0 {
+				return
+			}
+		}
+
+		// Refresh the deadline after potential wait.
+		dl = s.nextFetchDeadline()
+		if !dl.IsZero() {
+			fetchCtx, fetchCancel = context.WithDeadline(ctx, dl)
+			defer fetchCancel()
+		}
 	}
 
+	// Fetch blocks with content-hash verification.  On hash mismatch (the
+	// server regenerated blocks between our metadata fetch and block fetch)
+	// re-fetch metadata and retry up to 2 times.
+	const maxHashRetries = 2
 	var msgs []protocol.Message
 	var err error
-	msgs, err = fetcher.FetchChannel(fetchCtx, channelNum, blockCount)
-	if err != nil {
+	for attempt := 0; ; attempt++ {
+		msgs, err = fetcher.FetchChannelVerified(fetchCtx, channelNum, blockCount, ch.ContentHash)
+		if err == nil {
+			break
+		}
+		if errors.Is(err, client.ErrContentHashMismatch) && attempt < maxHashRetries {
+			s.addLog(fmt.Sprintf("Channel %s: block-version race detected, re-fetching metadata (attempt %d/%d)", ch.Name, attempt+1, maxHashRetries))
+			freshMeta, freshErr := fetcher.FetchMetadata(ctx)
+			if freshErr != nil {
+				s.addLog(fmt.Sprintf("Channel %s error refreshing metadata: %v", ch.Name, freshErr))
+				return
+			}
+			s.mu.Lock()
+			s.channels = freshMeta.Channels
+			s.telegramLoggedIn = freshMeta.TelegramLoggedIn
+			s.nextFetch = freshMeta.NextFetch
+			s.metaFetchedAt = time.Now()
+			s.mu.Unlock()
+			if cache != nil {
+				_ = cache.PutMetadata(freshMeta)
+			}
+			if channelNum < 1 || channelNum > len(freshMeta.Channels) {
+				return
+			}
+			ch = freshMeta.Channels[channelNum-1]
+			blockCount = int(ch.Blocks)
+			if blockCount <= 0 {
+				return
+			}
+			continue // retry with fresh metadata
+		}
 		if fetchCancel != nil && fetchCtx.Err() == context.DeadlineExceeded {
 			// nextFetch fired mid-download — wait for the server, then re-fetch.
 			fetchCancel()
@@ -1251,6 +1392,254 @@ func (s *Server) handleResetResolverStats(w http.ResponseWriter, r *http.Request
 	writeJSON(w, map[string]any{"ok": true})
 }
 
+// handleResolverBank manages the shared resolver bank.
+// GET: returns all bank resolvers with scores.
+// POST: adds resolvers to the bank.
+// DELETE: removes specific resolvers from the bank.
+func (s *Server) handleResolverBank(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		pl, _ := s.loadProfiles()
+		if pl == nil {
+			pl = &ProfileList{}
+		}
+
+		// Get live stats from the current fetcher.
+		var liveStats map[string][3]int64
+		var activeSet map[string]bool
+		s.mu.RLock()
+		if s.fetcher != nil {
+			liveStats = s.fetcher.ExportStats()
+			activeSet = make(map[string]bool)
+			for _, r := range s.fetcher.Resolvers() {
+				activeSet[r] = true
+			}
+		}
+		s.mu.RUnlock()
+		if activeSet == nil {
+			activeSet = make(map[string]bool)
+		}
+
+		type bankResolver struct {
+			Addr    string  `json:"addr"`
+			Score   float64 `json:"score"`
+			Success int64   `json:"success"`
+			Failure int64   `json:"failure"`
+			AvgMs   float64 `json:"avgMs"`
+			Active  bool    `json:"active"`
+		}
+
+		var bank []bankResolver
+		for _, addr := range pl.ResolverBank {
+			br := bankResolver{Addr: addr, Active: activeSet[addr]}
+			key := addr
+			if !strings.Contains(key, ":") {
+				key += ":53"
+			}
+			// Prefer live stats, fall back to saved scores.
+			if liveStats != nil {
+				if st, ok := liveStats[key]; ok {
+					br.Success = st[0]
+					br.Failure = st[1]
+					if st[0] > 0 {
+						br.AvgMs = float64(st[2]) / float64(st[0])
+					}
+					br.Score = computeResolverScore(st[0], st[1], st[2])
+				} else if ss, ok := pl.ResolverScores[addr]; ok {
+					br.Success = ss.Success
+					br.Failure = ss.Failure
+					if ss.Success > 0 {
+						br.AvgMs = float64(ss.TotalMs) / float64(ss.Success)
+					}
+					br.Score = computeResolverScore(ss.Success, ss.Failure, ss.TotalMs)
+				} else {
+					br.Score = 0.2
+				}
+			} else if ss, ok := pl.ResolverScores[addr]; ok {
+				br.Success = ss.Success
+				br.Failure = ss.Failure
+				if ss.Success > 0 {
+					br.AvgMs = float64(ss.TotalMs) / float64(ss.Success)
+				}
+				br.Score = computeResolverScore(ss.Success, ss.Failure, ss.TotalMs)
+			} else {
+				br.Score = 0.2
+			}
+			bank = append(bank, br)
+		}
+
+		sort.Slice(bank, func(i, j int) bool { return bank[i].Score > bank[j].Score })
+		writeJSON(w, map[string]any{"bank": bank, "count": len(pl.ResolverBank)})
+
+	case http.MethodPost:
+		var req struct {
+			Resolvers []string `json:"resolvers"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON", 400)
+			return
+		}
+		pl, _ := s.loadProfiles()
+		if pl == nil {
+			pl = &ProfileList{}
+		}
+		added := addToBank(pl, req.Resolvers)
+		if err := s.saveProfiles(pl); err != nil {
+			http.Error(w, "save failed", 500)
+			return
+		}
+		// Update the fetcher's resolver pool.
+		s.mu.RLock()
+		f := s.fetcher
+		s.mu.RUnlock()
+		if f != nil {
+			f.UpdateResolverPool(pl.ResolverBank)
+		}
+		writeJSON(w, map[string]any{"ok": true, "added": added, "total": len(pl.ResolverBank)})
+
+	case http.MethodDelete:
+		var req struct {
+			Addrs []string `json:"addrs"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Addrs) == 0 {
+			http.Error(w, "addrs required", 400)
+			return
+		}
+		pl, _ := s.loadProfiles()
+		if pl == nil {
+			writeJSON(w, map[string]any{"ok": true, "removed": 0, "remaining": 0})
+			return
+		}
+		removeSet := make(map[string]bool)
+		for _, a := range req.Addrs {
+			removeSet[a] = true
+		}
+		filtered := make([]string, 0, len(pl.ResolverBank))
+		for _, r := range pl.ResolverBank {
+			if !removeSet[r] {
+				filtered = append(filtered, r)
+			}
+		}
+		removed := len(pl.ResolverBank) - len(filtered)
+		pl.ResolverBank = filtered
+		for _, a := range req.Addrs {
+			delete(pl.ResolverScores, a)
+		}
+		_ = s.saveProfiles(pl)
+		s.mu.RLock()
+		f := s.fetcher
+		s.mu.RUnlock()
+		if f != nil {
+			f.UpdateResolverPool(pl.ResolverBank)
+		}
+		writeJSON(w, map[string]any{"ok": true, "removed": removed, "remaining": len(pl.ResolverBank)})
+
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+// handleResolverBankCleanup removes resolvers with score below a threshold.
+func (s *Server) handleResolverBankCleanup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var req struct {
+		MinScore float64 `json:"minScore"`
+		DryRun   bool    `json:"dryRun"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", 400)
+		return
+	}
+	if req.MinScore <= 0 {
+		http.Error(w, "minScore must be > 0", 400)
+		return
+	}
+
+	pl, _ := s.loadProfiles()
+	if pl == nil {
+		writeJSON(w, map[string]any{"ok": true, "removed": 0, "remaining": 0})
+		return
+	}
+
+	// Get live stats for score computation.
+	var liveStats map[string][3]int64
+	s.mu.RLock()
+	if s.fetcher != nil {
+		liveStats = s.fetcher.ExportStats()
+	}
+	s.mu.RUnlock()
+
+	var filtered []string
+	removed := 0
+	for _, addr := range pl.ResolverBank {
+		key := addr
+		if !strings.Contains(key, ":") {
+			key += ":53"
+		}
+		var score float64
+		if liveStats != nil {
+			if st, ok := liveStats[key]; ok {
+				score = computeResolverScore(st[0], st[1], st[2])
+			} else if ss, ok := pl.ResolverScores[addr]; ok {
+				score = computeResolverScore(ss.Success, ss.Failure, ss.TotalMs)
+			} else {
+				score = 0.2
+			}
+		} else if ss, ok := pl.ResolverScores[addr]; ok {
+			score = computeResolverScore(ss.Success, ss.Failure, ss.TotalMs)
+		} else {
+			score = 0.2
+		}
+		if score >= req.MinScore {
+			filtered = append(filtered, addr)
+		} else {
+			removed++
+		}
+	}
+
+	if req.DryRun {
+		writeJSON(w, map[string]any{"ok": true, "removed": removed, "remaining": len(filtered)})
+		return
+	}
+
+	// Apply the cleanup.
+	for _, addr := range pl.ResolverBank {
+		key := addr
+		if !strings.Contains(key, ":") {
+			key += ":53"
+		}
+		var score float64
+		if liveStats != nil {
+			if st, ok := liveStats[key]; ok {
+				score = computeResolverScore(st[0], st[1], st[2])
+			} else if ss, ok := pl.ResolverScores[addr]; ok {
+				score = computeResolverScore(ss.Success, ss.Failure, ss.TotalMs)
+			} else {
+				score = 0.2
+			}
+		} else if ss, ok := pl.ResolverScores[addr]; ok {
+			score = computeResolverScore(ss.Success, ss.Failure, ss.TotalMs)
+		} else {
+			score = 0.2
+		}
+		if score < req.MinScore {
+			delete(pl.ResolverScores, addr)
+		}
+	}
+	pl.ResolverBank = filtered
+	_ = s.saveProfiles(pl)
+	s.mu.RLock()
+	f := s.fetcher
+	s.mu.RUnlock()
+	if f != nil {
+		f.UpdateResolverPool(pl.ResolverBank)
+	}
+	writeJSON(w, map[string]any{"ok": true, "removed": removed, "remaining": len(filtered)})
+}
+
 func (s *Server) saveConfig(cfg *Config) error {
 	path := filepath.Join(s.dataDir, "config.json")
 	data, err := json.MarshalIndent(cfg, "", "  ")
@@ -1291,6 +1680,99 @@ func generateID() string {
 	b := make([]byte, 8)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// migrateResolverBank merges per-profile resolvers into the shared bank on first run.
+func (s *Server) migrateResolverBank() {
+	pl, err := s.loadProfiles()
+	if err != nil || pl == nil {
+		return
+	}
+	if len(pl.ResolverBank) > 0 {
+		return // already migrated
+	}
+	seen := make(map[string]bool)
+	for _, p := range pl.Profiles {
+		for _, r := range p.Config.Resolvers {
+			addr := r
+			if !strings.Contains(addr, ":") {
+				addr += ":53"
+			}
+			if !seen[addr] {
+				seen[addr] = true
+				pl.ResolverBank = append(pl.ResolverBank, addr)
+			}
+		}
+	}
+	if len(pl.ResolverBank) > 0 {
+		for i := range pl.Profiles {
+			pl.Profiles[i].Config.Resolvers = nil
+		}
+		_ = s.saveProfiles(pl)
+	}
+}
+
+// addToBank adds resolvers to the shared bank (deduplicated, normalized with :53).
+func addToBank(pl *ProfileList, resolvers []string) int {
+	seen := make(map[string]bool)
+	for _, r := range pl.ResolverBank {
+		seen[r] = true
+	}
+	added := 0
+	for _, r := range resolvers {
+		addr := r
+		if !strings.Contains(addr, ":") {
+			addr += ":53"
+		}
+		if !seen[addr] {
+			seen[addr] = true
+			pl.ResolverBank = append(pl.ResolverBank, addr)
+			added++
+		}
+	}
+	return added
+}
+
+// persistResolverScores saves the current fetcher stats to profiles.json.
+func (s *Server) persistResolverScores(stats map[string][3]int64) {
+	if len(stats) == 0 {
+		return
+	}
+	pl, err := s.loadProfiles()
+	if err != nil || pl == nil {
+		return
+	}
+	if pl.ResolverScores == nil {
+		pl.ResolverScores = make(map[string]*SavedResolverScore)
+	}
+	for addr, st := range stats {
+		pl.ResolverScores[addr] = &SavedResolverScore{
+			Success: st[0],
+			Failure: st[1],
+			TotalMs: st[2],
+		}
+	}
+	_ = s.saveProfiles(pl)
+}
+
+// computeResolverScore mirrors the scoring formula from fetcher.go.
+func computeResolverScore(success, failure, totalMs int64) float64 {
+	total := success + failure
+	if total == 0 {
+		return 0.2
+	}
+	successRate := float64(success) / float64(total)
+	var avgMs float64
+	if success > 0 {
+		avgMs = float64(totalMs) / float64(success)
+	} else {
+		avgMs = 30000
+	}
+	score := successRate * successRate / (avgMs/5000.0 + 1.0)
+	if score < 0.001 {
+		score = 0.001
+	}
+	return score
 }
 
 // handleProfiles manages CRUD for config profiles.
@@ -1339,6 +1821,11 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 			if req.Profile.Nickname == "" {
 				req.Profile.Nickname = req.Profile.Config.Domain
 			}
+			// Move resolvers to the shared bank.
+			if len(req.Profile.Config.Resolvers) > 0 {
+				addToBank(pl, req.Profile.Config.Resolvers)
+				req.Profile.Config.Resolvers = nil
+			}
 			pl.Profiles = append(pl.Profiles, req.Profile)
 			if len(pl.Profiles) == 1 {
 				pl.Active = req.Profile.ID
@@ -1348,6 +1835,11 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 		case "update":
 			for i, p := range pl.Profiles {
 				if p.ID == req.Profile.ID {
+					// Move resolvers to the shared bank.
+					if len(req.Profile.Config.Resolvers) > 0 {
+						addToBank(pl, req.Profile.Config.Resolvers)
+						req.Profile.Config.Resolvers = nil
+					}
 					pl.Profiles[i] = req.Profile
 					if p.ID == pl.Active {
 						needsReinit = true

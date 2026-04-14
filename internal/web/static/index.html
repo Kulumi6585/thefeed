@@ -1443,11 +1443,11 @@
             <span class="profile-btn-arrow"><span class="plus">+</span>&#9660;</span>
           </button>
           <button class="icon-btn" onclick="openSettings()" title="Settings" data-i18n-title="settings">&#9881;</button>
+          <button class="icon-btn" onclick="jumpToLog()" title="Log" data-i18n-title="sidebar_log" style="font-size:16px">&#128220;</button>
         </div>
         <div class="sidebar-toolbar">
-          <button class="stb" id="scannerIconBtn" onclick="openScanner()" data-i18n="sidebar_scanner">Scanner</button>
+          <button class="stb" id="scannerIconBtn" onclick="openScanner()" data-i18n="scanner_find_resolvers">Find Resolvers</button>
           <button class="stb" id="resolversSidebarBtn" onclick="openResolversModal()"><span data-i18n="sidebar_resolvers">Resolvers</span> <span class="stb-badge" id="resolversBadge" style="color:var(--error)">0</span></button>
-          <button class="stb" onclick="jumpToLog()" data-i18n="sidebar_log">Log</button>
         </div>
         <input class="sidebar-search" id="channelSearch" type="text" data-i18n-ph="search" placeholder="Search..."
           oninput="filterChannels()">
@@ -1629,8 +1629,10 @@
       </div>
       <div class="form-group"><label data-i18n="passphrase">Passphrase</label><input type="password" id="peKey"
           placeholder="..."></div>
-      <div class="form-group"><label data-i18n="resolvers">Resolvers</label><textarea id="peResolvers"
-          placeholder="8.8.8.8&#10;1.1.1.1"></textarea></div>
+      <div class="info-note" style="font-size:12px;line-height:1.5;margin:6px 0 10px;padding:8px 12px;background:var(--card-bg);border-radius:8px;border:1px solid var(--border)">
+        <span data-i18n="resolver_bank_note">Resolvers are managed in the shared Resolver Bank.</span>
+        <a href="#" onclick="event.preventDefault();closeProfileEditor();openResolversModal()" style="color:var(--accent);text-decoration:none;margin-inline-start:4px" data-i18n="open_resolver_bank">Open Resolver Bank</a>
+      </div>
       <div class="form-group"><label data-i18n="query_mode">Query Mode</label>
         <select id="peQueryMode">
           <option value="single">Single label (base32)</option>
@@ -1643,7 +1645,6 @@
           value="4" min="1" max="5" title="How many resolvers are queried at the same time for one block"></div>
         <div class="form-group"><label data-i18n="dns_timeout">DNS Query Timeout (seconds)</label><input type="number" id="peTimeout"
           value="15" min="1" max="60" step="1"></div>
-        <div class="form-group" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="peAutoScan" style="width:auto" checked><label for="peAutoScan" data-i18n="auto_scan">Automatic hourly resolver check</label></div>
       <!-- Channel Management (editing only) -->
       <div id="peChannelSection" style="display:none">
         <hr class="section-divider">
@@ -1661,8 +1662,6 @@
         <button class="btn btn-flat" onclick="closeProfileEditor()" data-i18n="cancel">Cancel</button>
         <button class="btn btn-danger" id="peDeleteBtn" style="display:none" onclick="deleteEditingProfile()"
           data-i18n="delete">Delete</button>
-        <button class="btn btn-outline" id="peScannerBtn" style="display:none" onclick="openScannerFromProfile()"
-          data-i18n="scanner_find_resolvers">&#128269; Find Resolvers</button>
         <button class="btn btn-primary" onclick="saveProfile()" data-i18n="save">Save</button>
       </div>
     </div>
@@ -1687,15 +1686,57 @@
     </div>
   </div>
 
-  <!-- ===== RESOLVERS MODAL ===== -->
+  <!-- ===== RESOLVER BANK MODAL ===== -->
   <div class="modal-overlay" id="resolversModal">
-    <div class="modal" style="max-width:560px">
-      <h2 data-i18n="resolvers_title">Working Resolvers</h2>
-      <div id="resolversListEl" style="max-height:400px;overflow-y:auto;font-size:13px;margin-bottom:14px"></div>
+    <div class="modal" style="max-width:600px">
+      <h2 data-i18n="resolvers_title">Resolver Bank</h2>
+      <div class="info-note" style="font-size:12px;line-height:1.5;margin-bottom:12px;padding:8px 12px;background:var(--card-bg);border-radius:8px;border:1px solid var(--border)">
+        <span data-i18n="resolver_bank_info">Resolvers are DNS servers used to connect to thefeed and fetch data. Use the Scanner to find new resolvers, or add them manually below.</span>
+      </div>
+      <!-- Tabs -->
+      <div style="display:flex;gap:0;margin-bottom:12px;border-bottom:2px solid var(--border)">
+        <button class="btn btn-flat resolver-tab active" id="resolverTabActive" onclick="switchResolverTab('active')" style="border-radius:8px 8px 0 0;border-bottom:2px solid var(--accent);margin-bottom:-2px;font-weight:600;padding:8px 16px">
+          <span data-i18n="resolver_tab_active">Active</span> <span id="resolverActiveCount" class="stb-badge" style="margin-inline-start:4px">0</span>
+        </button>
+        <button class="btn btn-flat resolver-tab" id="resolverTabBank" onclick="switchResolverTab('bank')" style="border-radius:8px 8px 0 0;margin-bottom:-2px;padding:8px 16px">
+          <span data-i18n="resolver_tab_bank">Bank</span> <span id="resolverBankCount" class="stb-badge" style="margin-inline-start:4px">0</span>
+        </button>
+      </div>
+      <!-- Active resolvers panel -->
+      <div id="resolverPanelActive" style="max-height:350px;overflow-y:auto;font-size:13px;margin-bottom:10px"></div>
+      <!-- Bank resolvers panel -->
+      <div id="resolverPanelBank" style="display:none">
+        <div id="resolverBankListEl" style="max-height:280px;overflow-y:auto;font-size:13px;margin-bottom:10px"></div>
+        <!-- Cleanup section -->
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:6px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px" data-i18n="cleanup_title">Remove Bad Resolvers</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <label style="font-size:12px;white-space:nowrap" data-i18n="min_score">Min score:</label>
+            <input type="range" id="bankCleanupSlider" min="0.01" max="0.5" step="0.01" value="0.10" style="flex:1" oninput="previewBankCleanup()">
+            <span id="bankCleanupValue" style="font-size:12px;font-weight:600;min-width:36px;text-align:center">0.10</span>
+          </div>
+          <div id="bankCleanupPreview" style="font-size:12px;color:var(--text-dim);margin-bottom:8px"></div>
+          <button class="btn btn-danger btn-sm" onclick="doBankCleanup()" data-i18n="remove_bad_resolvers">Remove Bad Resolvers</button>
+        </div>
+        <!-- Add resolvers manually -->
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px" data-i18n="add_resolvers">Add Resolvers</div>
+          <div style="display:flex;gap:6px">
+            <textarea id="bankAddResolvers" rows="2" placeholder="8.8.8.8&#10;1.1.1.1" style="flex:1;font-family:monospace;font-size:12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 8px"></textarea>
+            <button class="btn btn-primary btn-sm" onclick="addResolversToBank()" style="align-self:flex-end" data-i18n="add">Add</button>
+          </div>
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px;display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="bankAutoScan" style="width:auto" checked onchange="toggleBankAutoScan()">
+        <label for="bankAutoScan" style="font-size:12px;cursor:pointer" data-i18n="auto_scan">Automatic hourly resolver check</label>
+      </div>
       <div class="modal-actions">
-        <button class="btn btn-flat" onclick="closeResolversModal()" data-i18n="close">Close</button>
+        <button class="btn btn-outline" onclick="openScannerFromBank()" data-i18n="scanner_find_resolvers">&#128269; Find Resolvers</button>
+        <button class="btn btn-outline" onclick="doRescanFromBank()" data-i18n="rescan">Rescan</button>
         <button class="btn btn-outline" onclick="resetScoreboard()" data-i18n="reset_scoreboard">Reset Scores</button>
         <button class="btn btn-outline" onclick="copyResolversList()" data-i18n="copy">Copy</button>
+        <button class="btn btn-flat" onclick="closeResolversModal()" data-i18n="close">Close</button>
       </div>
     </div>
   </div>
@@ -1854,7 +1895,7 @@
         channel_mgmt_inactive: 'برای مدیریت کانال\u200cها، ابتدا این پروفایل را فعال کنید.',
         channel_placeholder: 'نام کاربری کانال',
         version: 'نسخه',
-        edit: 'ویرایش', share: 'اشتراک\u200cگذاری', delete: 'حذف', save: 'ذخیره', cancel: 'لغو',
+        edit: 'ویرایش', share: 'اشتراک\u200cگذاری', delete: 'حذف', save: 'ذخیره', cancel: 'لغو', yes: 'بله', no: 'خیر',
         copied: 'کپی شد!', copy: 'کپی', active: 'فعال',
         private: 'خصوصی', x_posts: 'پست‌های X', x_label: 'X', no_config: 'ابتدا پروفایل را ذخیره کنید',
         refreshing: 'در حال بروزرسانی...', fetching_channel: 'در حال دریافت کانال...',
@@ -1922,11 +1963,30 @@
         export_no_messages: 'پیامی برای خروجی وجود ندارد',
         show_resolvers: 'ریزالورهای فعال',
         show_resolvers_btn: 'نمایش',
-        resolvers_title: 'ریزالورهای فعال',
+        resolvers_title: 'بانک ریزالور',
         no_active_resolvers: 'ریزالور فعالی وجود ندارد',
         resolver_speed: 'سرعت',
         resolver_score: 'امتیاز',
         reset_scoreboard: 'ریست امتیازها',
+        resolver_bank_note: 'ریزالورها در بانک مشترک مدیریت می‌شوند.',
+        open_resolver_bank: 'باز کردن بانک ریزالور',
+        resolver_bank_info: 'ریزالورها سرورهای DNS هستند که برای اتصال به thefeed و دریافت اطلاعات استفاده می‌شوند. از اسکنر برای یافتن ریزالورهای جدید استفاده کنید یا آنها را دستی اضافه کنید.',
+        resolver_tab_active: 'فعال',
+        resolver_tab_bank: 'بانک',
+        cleanup_title: 'حذف ریزالورهای ضعیف',
+        min_score: 'حداقل امتیاز:',
+        remove_bad_resolvers: 'حذف ریزالورهای ضعیف',
+        would_be_removed: 'حذف خواهد شد',
+        would_remain: 'باقی می‌ماند',
+        removed: 'حذف شد',
+        remaining: 'باقی‌مانده',
+        added: 'اضافه شد',
+        add_resolvers: 'افزودن ریزالور',
+        select_resolvers_export: 'ریزالورها برای اشتراک‌گذاری:',
+        select_all: 'همه',
+        select_none: 'هیچ‌کدام',
+        import_add_resolvers: 'آیا {n} ریزالور وارد شده به بانک اضافه شود؟',
+        import_add_resolvers_large: 'بانک شما {c} ریزالور دارد. آیا {n} ریزالور جدید اضافه شود؟',
         bg_image: 'تصویر پس‌زمینه',
         apply: 'اعمال',
         clear_bg: 'پاک کردن',
@@ -1966,7 +2026,7 @@
         channel_mgmt_inactive: 'Switch to this profile first to manage its channels.',
         channel_placeholder: 'channel_username',
         version: 'Version',
-        edit: 'Edit', share: 'Share', delete: 'Delete', save: 'Save', cancel: 'Cancel',
+        edit: 'Edit', share: 'Share', delete: 'Delete', save: 'Save', cancel: 'Cancel', yes: 'Yes', no: 'No',
         copied: 'URI copied!', copy: 'Copy', active: 'Active',
         private: 'Private', x_posts: 'X Posts', x_label: 'X', no_config: 'Save a profile first',
         refreshing: 'Refreshing...', fetching_channel: 'Fetching channel...',
@@ -2034,11 +2094,30 @@
         export_no_messages: 'No messages to export',
         show_resolvers: 'Working Resolvers',
         show_resolvers_btn: 'Show',
-        resolvers_title: 'Working Resolvers',
+        resolvers_title: 'Resolver Bank',
         no_active_resolvers: 'No active resolvers',
         resolver_speed: 'Speed',
         resolver_score: 'Score',
         reset_scoreboard: 'Reset Scores',
+        resolver_bank_note: 'Resolvers are managed in the shared Resolver Bank.',
+        open_resolver_bank: 'Open Resolver Bank',
+        resolver_bank_info: 'Resolvers are DNS servers used to connect to thefeed and fetch data. Use the Scanner to find new resolvers, or add them manually below.',
+        resolver_tab_active: 'Active',
+        resolver_tab_bank: 'Bank',
+        cleanup_title: 'Remove Bad Resolvers',
+        min_score: 'Min score:',
+        remove_bad_resolvers: 'Remove Bad Resolvers',
+        would_be_removed: 'would be removed',
+        would_remain: 'would remain',
+        removed: 'Removed',
+        remaining: 'remaining',
+        added: 'Added',
+        add_resolvers: 'Add Resolvers',
+        select_resolvers_export: 'Resolvers to include in share link:',
+        select_all: 'All',
+        select_none: 'None',
+        import_add_resolvers: 'Add {n} imported resolvers to your bank?',
+        import_add_resolvers_large: 'Your bank has {c} resolvers. Add {n} new resolvers?',
         bg_image: 'Background Image',
         apply: 'Apply',
         clear_bg: 'Clear',
@@ -2235,6 +2314,16 @@
         document.getElementById('rescanPromptYes').onclick = function () { document.body.removeChild(overlay); resolve(false) };
       });
     }
+    function showConfirmDialog(msg, yesText, noText) {
+      return new Promise(function (resolve) {
+        var overlay = document.createElement('div');
+        overlay.className = 'modal-overlay active';
+        overlay.innerHTML = '<div class="modal" style="max-width:380px"><p style="font-size:13px;color:var(--text);margin-bottom:16px;line-height:1.6">' + esc(msg) + '</p><div class="modal-actions"><button class="btn btn-flat" id="confirmNo">' + esc(noText || t('cancel')) + '</button><button class="btn btn-primary" id="confirmYes">' + esc(yesText || t('ok')) + '</button></div></div>';
+        document.body.appendChild(overlay);
+        document.getElementById('confirmNo').onclick = function () { document.body.removeChild(overlay); resolve(false) };
+        document.getElementById('confirmYes').onclick = function () { document.body.removeChild(overlay); resolve(true) };
+      });
+    }
 
     // ===== SETTINGS =====
     function openSettings() {
@@ -2324,6 +2413,7 @@
       eventSource = new EventSource('/api/events');
       eventSource.addEventListener('log', function (e) { addLogLine(JSON.parse(e.data)) });
       eventSource.addEventListener('update', async function (e) {
+        refreshResolversBadge();
         var data; try { data = JSON.parse(e.data) } catch (x) { data = e.data }
         var wasEmpty = channels.length === 0;
         var snapChannel = selectedChannel;
@@ -2372,11 +2462,12 @@
     }
     function closeProfiles() { document.getElementById('profilesModal').classList.remove('active') }
 
-    function buildProfileUri(id) {
+    function buildProfileUri(id, selectedResolvers) {
       if (!profiles || !profiles.profiles) return '';
       var p = profiles.profiles.find(function (x) { return x.id === id });
       if (!p || !p.config.domain) return '';
-      return 'thefeed://' + encodeURIComponent(p.config.domain) + '/' + encodeURIComponent(p.config.key) + '?r=' + encodeURIComponent((p.config.resolvers || []).join(','));
+      var resolvers = selectedResolvers || [];
+      return 'thefeed://' + encodeURIComponent(p.config.domain) + '/' + encodeURIComponent(p.config.key) + '?r=' + encodeURIComponent(resolvers.join(','));
     }
 
     function renderProfilesModal() {
@@ -2397,35 +2488,74 @@
         if (isActive) h += '<span class="active-badge">' + t('active') + '</span>';
         h += '</div><div class="profile-row-domain">' + esc(p.config.domain) + '</div></div>';
         h += '<div class="profile-row-btns">';
-        if (isActive) h += '<button class="btn btn-flat btn-sm" onclick="event.stopPropagation();doRescanFromProfiles()" title="' + t('rescan') + '" style="color:var(--success);font-size:11px">' + t('rescan') + '</button>';
         h += '<button class="btn btn-flat btn-sm" onclick="event.stopPropagation();toggleSharePanel(\'' + p.id + '\')" title="' + t('share') + '" style="font-size:11px">' + t('share') + '</button>';
         h += '<button class="btn btn-flat btn-sm" onclick="event.stopPropagation();openProfileEditor(\'' + p.id + '\')" title="' + t('edit') + '" style="font-size:11px">' + t('edit') + '</button>';
         h += '</div></div>';
         // Share panel (hidden by default)
         h += '<div class="share-panel" id="' + shareId + '" style="display:none">';
         h += '<div class="share-panel-inner">';
+        h += '<div id="share-resolvers-' + p.id + '" style="max-height:120px;overflow-y:auto;margin-bottom:6px;font-size:11px"></div>';
         h += '<input class="share-uri-input" type="text" readonly id="suri-' + p.id + '" value="">';
+        h += '<div style="display:flex;gap:4px">';
         h += '<button class="btn btn-primary btn-sm" onclick="copyShareUri(\'' + p.id + '\')">' + t('copy') + '</button>';
         h += '<button class="btn btn-flat btn-sm" onclick="toggleSharePanel(\'' + p.id + '\')">&#10005;</button>';
-        h += '</div></div>';
+        h += '</div></div></div>';
         h += '</div>';
       }
       el.innerHTML = h;
     }
 
-    function toggleSharePanel(id) {
-      // Close all first
-      document.querySelectorAll('.share-panel').forEach(function (sp) { sp.style.display = 'none' });
+    async function toggleSharePanel(id) {
       var panel = document.getElementById('share-' + id);
       if (!panel) return;
-      var uri = buildProfileUri(id);
+      // If already visible, just close it
+      if (panel.style.display === 'block') {
+        panel.style.display = 'none';
+        return;
+      }
+      // Close all first
+      document.querySelectorAll('.share-panel').forEach(function (sp) { sp.style.display = 'none' });
+      panel.style.display = 'block';
+      // Populate resolver checkboxes from bank
+      var resolverEl = document.getElementById('share-resolvers-' + id);
+      resolverEl.innerHTML = '<span style="color:var(--text-dim)">' + t('loading') + '</span>';
+      try {
+        var r = await fetch('/api/resolvers/bank');
+        var data = r.ok ? await r.json() : { bank: [] };
+        var bank = data.bank || [];
+        if (bank.length === 0) {
+          resolverEl.innerHTML = '<span style="color:var(--text-dim)">' + t('no_active_resolvers') + '</span>';
+        } else {
+          var h = '<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--text-dim)">' + t('select_resolvers_export') + '</label></div>';
+          h += '<div style="display:flex;gap:4px;margin-bottom:4px"><button class="btn btn-flat" style="font-size:10px;padding:2px 6px" onclick="toggleAllShareResolvers(\'' + id + '\',true)">' + t('select_all') + '</button><button class="btn btn-flat" style="font-size:10px;padding:2px 6px" onclick="toggleAllShareResolvers(\'' + id + '\',false)">' + t('select_none') + '</button></div>';
+          for (var i = 0; i < bank.length; i++) {
+            h += '<label style="display:block;font-size:11px;font-family:monospace;cursor:pointer"><input type="checkbox" class="share-r-cb" data-profile="' + id + '" value="' + esc(bank[i].addr) + '" checked onchange="updateShareUri(\'' + id + '\')" style="width:auto;margin-inline-end:4px">' + esc(bank[i].addr) + '</label>';
+          }
+          resolverEl.innerHTML = h;
+        }
+      } catch (e) { resolverEl.innerHTML = '' }
+      updateShareUri(id);
+    }
+
+    function toggleAllShareResolvers(id, checked) {
+      document.querySelectorAll('.share-r-cb[data-profile="' + id + '"]').forEach(function (cb) { cb.checked = checked });
+      updateShareUri(id);
+    }
+
+    function updateShareUri(id) {
+      var cbs = document.querySelectorAll('.share-r-cb[data-profile="' + id + '"]');
+      var selected = [];
+      cbs.forEach(function (cb) { if (cb.checked) selected.push(cb.value) });
+      var uri = buildProfileUri(id, selected);
       var input = document.getElementById('suri-' + id);
       if (input) input.value = uri || t('no_config');
-      panel.style.display = 'block';
     }
 
     function copyShareUri(id) {
-      var uri = buildProfileUri(id);
+      var cbs = document.querySelectorAll('.share-r-cb[data-profile="' + id + '"]');
+      var selected = [];
+      cbs.forEach(function (cb) { if (cb.checked) selected.push(cb.value) });
+      var uri = buildProfileUri(id, selected);
       if (!uri) { showToast(t('no_config')); return }
       navigator.clipboard.writeText(uri).then(function () { showToast(t('copied')) }).catch(function () {
         var input = document.getElementById('suri-' + id); if (input) { input.select(); input.setSelectionRange(0, 9999); }
@@ -2435,15 +2565,19 @@
 
     async function activateProfile(id) {
       if (id === activeProfileId) { closeProfiles(); return }
-      // Check if we should skip resolver check
-      var skipCheck = false;
+      // If there are active resolvers, ask user whether to rescan; otherwise skip.
+      var skipCheck = true;
       try {
-        var stRes = await fetch('/api/status');
-        var st = await stRes.json();
-        if (st.lastScan && st.lastScan.count > 0) {
-          skipCheck = await showRescanPrompt(st.lastScan.count);
+        var bankR = await fetch('/api/resolvers/bank');
+        if (bankR.ok) {
+          var bankD = await bankR.json();
+          var activeN = 0;
+          (bankD.bank || []).forEach(function (b) { if (b.active) activeN++ });
+          if (activeN > 0) {
+            skipCheck = await showConfirmDialog(t('rescan_prompt_msg').replace('{n}', activeN), t('rescan_prompt_skip'), t('rescan_prompt_yes'));
+          }
         }
-      } catch (e) { }
+      } catch (e) { /* ignore — default to skipCheck=true */ }
       try {
         var r = await fetch('/api/profiles/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id, skipCheck: skipCheck }) });
         if (!r.ok) return;
@@ -2471,12 +2605,29 @@
         params.split('&').forEach(function (kv) { var p = kv.split('='); if (p[0] === 'r' && p[1]) resolvers = decodeURIComponent(p[1]).split(',').filter(Boolean) });
         if (!domain || !key) { errEl.textContent = t('uri_missing'); errEl.style.display = 'block'; return }
         if (!resolvers.length) resolvers = ['8.8.8.8', '1.1.1.1'];
-        var profile = { id: '', nickname: domain, config: { domain: domain, key: key, resolvers: resolvers, queryMode: 'single', rateLimit: 6 } };
+        // Add resolvers to the shared bank.
+        var bankData = { count: 0 };
+        try {
+          var bankRes = await fetch('/api/resolvers/bank', { signal: AbortSignal.timeout(5000) });
+          if (bankRes.ok) bankData = await bankRes.json();
+        } catch (e2) { /* timeout or fetch error — treat as empty bank */ }
+        var shouldAdd = true;
+        if (bankData.count > 0 && bankData.count <= 200) {
+          shouldAdd = await showConfirmDialog(t('import_add_resolvers').replace('{n}', resolvers.length), t('yes'), t('no'));
+        } else if (bankData.count > 200) {
+          shouldAdd = await showConfirmDialog(t('import_add_resolvers_large').replace('{n}', resolvers.length).replace('{c}', bankData.count), t('yes'), t('no'));
+        }
+        if (shouldAdd) {
+          await fetch('/api/resolvers/bank', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resolvers: resolvers }) });
+        }
+        // Create profile without resolvers (they're in the bank now).
+        var profile = { id: '', nickname: domain, config: { domain: domain, key: key, queryMode: 'single', rateLimit: 6 } };
         var r = await fetch('/api/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create', profile: profile }) });
         if (!r.ok) throw new Error('save failed');
         okEl.textContent = t('import_success').replace('{d}', domain); okEl.style.display = 'block';
         document.getElementById('importUriInput').value = '';
         await loadProfiles(); renderProfilesModal();
+        refreshResolversBadge();
       } catch (e) { errEl.textContent = t('import_error') + ': ' + e.message; errEl.style.display = 'block' }
     }
 
@@ -2489,18 +2640,15 @@
       if (id) {
         document.getElementById('profileEditorTitle').textContent = t('edit_profile');
         document.getElementById('peDeleteBtn').style.display = '';
-        document.getElementById('peScannerBtn').style.display = '';
         var p = profiles && profiles.profiles && profiles.profiles.find(function (x) { return x.id === id });
         if (p) {
           document.getElementById('peNick').value = p.nickname || '';
           document.getElementById('peDomain').value = p.config.domain || '';
           document.getElementById('peKey').value = p.config.key || '';
-          document.getElementById('peResolvers').value = (p.config.resolvers || []).join('\n');
           document.getElementById('peQueryMode').value = p.config.queryMode || 'single';
           document.getElementById('peRateLimit').value = p.config.rateLimit || 6;
           document.getElementById('peScatter').value = p.config.scatter || 4;
           document.getElementById('peTimeout').value = p.config.timeout || 15;
-          document.getElementById('peAutoScan').checked = p.config.autoScan !== false;
         }
         document.getElementById('peChannelSection').style.display = '';
         var isActive = id === activeProfileId;
@@ -2516,16 +2664,13 @@
       } else {
         document.getElementById('profileEditorTitle').textContent = t('new_profile');
         document.getElementById('peDeleteBtn').style.display = 'none';
-        document.getElementById('peScannerBtn').style.display = 'none';
         document.getElementById('peNick').value = '';
         document.getElementById('peDomain').value = '';
         document.getElementById('peKey').value = '';
-        document.getElementById('peResolvers').value = '';
         document.getElementById('peQueryMode').value = 'single';
         document.getElementById('peRateLimit').value = '6';
         document.getElementById('peScatter').value = '4';
         document.getElementById('peTimeout').value = '15';
-        document.getElementById('peAutoScan').checked = true;
         document.getElementById('peChannelSection').style.display = 'none';
       }
     }
@@ -2572,21 +2717,30 @@
       var nick = document.getElementById('peNick').value.trim();
       var domain = document.getElementById('peDomain').value.trim();
       var key = document.getElementById('peKey').value;
-      var resolvers = document.getElementById('peResolvers').value.trim().split(/[\n,]+/).map(function (s) { return s.trim() }).filter(Boolean);
-      if (!domain || !key || !resolvers.length) { errEl.textContent = t('resolvers') + ' / ' + t('domain') + ' / ' + t('passphrase'); errEl.style.display = 'block'; return }
-      var profile = { id: editingProfileId || '', nickname: nick || domain, config: { domain: domain, key: key, resolvers: resolvers, queryMode: document.getElementById('peQueryMode').value, rateLimit: parseFloat(document.getElementById('peRateLimit').value) || 6, scatter: parseInt(document.getElementById('peScatter').value) || 4, timeout: parseInt(document.getElementById('peTimeout').value) || 15, autoScan: document.getElementById('peAutoScan').checked ? undefined : false } };
+      if (!domain || !key) { errEl.textContent = t('domain') + ' / ' + t('passphrase'); errEl.style.display = 'block'; return }
+      var profile = { id: editingProfileId || '', nickname: nick || domain, config: { domain: domain, key: key, queryMode: document.getElementById('peQueryMode').value, rateLimit: parseFloat(document.getElementById('peRateLimit').value) || 6, scatter: parseInt(document.getElementById('peScatter').value) || 4, timeout: parseInt(document.getElementById('peTimeout').value) || 15 } };
+      // Preserve autoScan from existing profile
+      if (editingProfileId && profiles && profiles.profiles) {
+        var existing = profiles.profiles.find(function (x) { return x.id === editingProfileId });
+        if (existing && existing.config.autoScan === false) profile.config.autoScan = false;
+      }
       var action = editingProfileId ? 'update' : 'create';
       var wasFirst = !profiles || !profiles.profiles || profiles.profiles.length === 0;
-      // Check if we should skip resolver check (existing healthy resolvers)
-      var skipCheck = false;
-      if (editingProfileId && editingProfileId === activeProfileId) {
+      // If there are active resolvers, ask user whether to rescan; otherwise skip.
+      var skipCheck = true;
+      var isActiveEdit = editingProfileId && editingProfileId === activeProfileId;
+      if (isActiveEdit || wasFirst) {
         try {
-          var stRes = await fetch('/api/status');
-          var st = await stRes.json();
-          if (st.lastScan && st.lastScan.count > 0) {
-            skipCheck = await showRescanPrompt(st.lastScan.count);
+          var bankR = await fetch('/api/resolvers/bank');
+          if (bankR.ok) {
+            var bankD = await bankR.json();
+            var activeN = 0;
+            (bankD.bank || []).forEach(function (b) { if (b.active) activeN++ });
+            if (activeN > 0) {
+              skipCheck = await showConfirmDialog(t('rescan_prompt_msg').replace('{n}', activeN), t('rescan_prompt_skip'), t('rescan_prompt_yes'));
+            }
           }
-        } catch (e) { }
+        } catch (e) { /* ignore — default to skipCheck=true */ }
       }
       try {
         var r = await fetch('/api/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: action, profile: profile, skipCheck: skipCheck }) });
@@ -2611,16 +2765,6 @@
           }
         }
       } catch (e) { errEl.textContent = e.message; errEl.style.display = 'block' }
-    }
-
-    // ===== RESCAN =====
-    async function doRescanFromProfiles() {
-      closeProfiles();
-      showToast(t('rescan_started'));
-      document.getElementById('progressPanel').innerHTML = '';
-      showInitProgress();
-      try { await fetch('/api/rescan', { method: 'POST' }) } catch (e) { }
-      setTimeout(function () { loadChannels().then(function () { if (selectedChannel > 0) loadMessages(selectedChannel) }) }, 3000);
     }
 
     async function deleteEditingProfile() {
@@ -3156,17 +3300,6 @@
       document.getElementById('scannerModal').classList.remove('active');
       if (scanPollTimer) { clearInterval(scanPollTimer); scanPollTimer = null }
     }
-    function openScannerFromProfile() {
-      var profileId = editingProfileId;
-      closeProfileEditor();
-      openScanner();
-      if (profileId) {
-        var sel = document.getElementById('scanProfile');
-        for (var i = 0; i < sel.options.length; i++) {
-          if (sel.options[i].value === profileId) { sel.selectedIndex = i; break }
-        }
-      }
-    }
 
     function populateScanProfileSelect() {
       var sel = document.getElementById('scanProfile');
@@ -3557,86 +3690,175 @@
       }).catch(function () { showToast('Copy failed') });
     }
 
-    // ===== WORKING RESOLVERS =====
-    function updateResolversBadge(count) {
+    // ===== RESOLVER BANK =====
+    var currentResolverTab = 'active';
+    function updateResolversBadge(count, bankCount) {
       var badge = document.getElementById('resolversBadge');
       if (!badge) return;
-      badge.textContent = count;
-      badge.style.color = count > 0 ? 'var(--success, #27ae60)' : 'var(--error, #e74c3c)';
+      badge.textContent = count + ' / ' + (bankCount !== undefined ? bankCount : count);
+      var total = bankCount !== undefined ? bankCount : count;
+      if (total > 500) {
+        badge.style.color = 'var(--error, #e74c3c)';
+      } else {
+        badge.style.color = count > 0 ? 'var(--success, #27ae60)' : 'var(--error, #e74c3c)';
+      }
     }
     async function refreshResolversBadge() {
       try {
-        var r = await fetch('/api/resolvers/active');
+        var r = await fetch('/api/resolvers/bank');
         if (!r.ok) return;
         var data = await r.json();
-        updateResolversBadge((data.resolvers || []).length);
+        var activeCount = 0;
+        (data.bank || []).forEach(function (b) { if (b.active) activeCount++ });
+        updateResolversBadge(activeCount, data.count || 0);
       } catch (e) { }
     }
     var resolversRefreshTimer = null;
-    async function _fetchResolversBoard(el) {
+    function _buildScoreboardTable(board, showRemove, removeFromBank) {
+      if (!board.length) return '<div style="color:var(--text-dim)">' + t('no_active_resolvers') + '</div>';
+      var h = '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+      h += '<thead><tr style="border-bottom:2px solid var(--border);text-align:left">';
+      h += '<th style="padding:6px 8px">Resolver</th>';
+      h += '<th style="padding:6px 8px;text-align:right">' + t('resolver_speed') + '</th>';
+      h += '<th style="padding:6px 8px;text-align:right">' + t('resolver_score') + '</th>';
+      h += '<th style="padding:6px 8px;text-align:center">\u2705</th>';
+      h += '<th style="padding:6px 8px;text-align:center">\u274C</th>';
+      if (showRemove) h += '<th style="padding:6px 8px"></th>';
+      h += '</tr></thead><tbody>';
+      for (var i = 0; i < board.length; i++) {
+        var b = board[i];
+        var scoreColor = b.score >= 0.5 ? 'var(--success)' : b.score >= 0.15 ? 'var(--text)' : 'var(--error)';
+        h += '<tr style="border-bottom:1px solid var(--border)">';
+        h += '<td style="padding:5px 8px;font-family:monospace">' + esc(b.addr);
+        if (b.active !== undefined && b.active) h += ' <span style="color:var(--success);font-size:10px">\u25CF</span>';
+        h += '</td>';
+        h += '<td style="padding:5px 8px;text-align:right">' + (b.avgMs > 0 ? Math.round(b.avgMs) + 'ms' : '-') + '</td>';
+        h += '<td style="padding:5px 8px;text-align:right;color:' + scoreColor + ';font-weight:600">' + b.score.toFixed(2) + '</td>';
+        h += '<td style="padding:5px 8px;text-align:center;color:var(--success)">' + b.success + '</td>';
+        h += '<td style="padding:5px 8px;text-align:center;color:var(--error)">' + b.failure + '</td>';
+        if (showRemove) {
+          var fn = removeFromBank ? 'removeResolverFromBank' : 'removeResolver';
+          h += '<td style="padding:5px 8px;text-align:center"><button onclick="' + fn + '(\'' + esc(b.addr) + '\')" style="background:none;border:none;color:var(--error);cursor:pointer;font-size:14px;padding:2px 4px" title="Remove">&times;</button></td>';
+        }
+        h += '</tr>';
+      }
+      h += '</tbody></table>';
+      return h;
+    }
+    async function _fetchActiveBoard() {
+      var el = document.getElementById('resolverPanelActive');
       try {
         var r = await fetch('/api/resolvers/active');
         if (!r.ok) throw new Error(await r.text());
         var data = await r.json();
         var board = data.scoreboard || [];
-        if (!board.length) { el.innerHTML = '<div style="color:var(--text-dim)">' + t('no_active_resolvers') + '</div>'; updateResolversBadge(0); return }
-        updateResolversBadge(board.length);
-        var h = '<table style="width:100%;border-collapse:collapse;font-size:12px">';
-        h += '<thead><tr style="border-bottom:2px solid var(--border);text-align:left">';
-        h += '<th style="padding:6px 8px">Resolver</th>';
-        h += '<th style="padding:6px 8px;text-align:right">' + t('resolver_speed') + '</th>';
-        h += '<th style="padding:6px 8px;text-align:right">' + t('resolver_score') + '</th>';
-        h += '<th style="padding:6px 8px;text-align:center">\u2705</th>';
-        h += '<th style="padding:6px 8px;text-align:center">\u274C</th>';
-        h += '<th style="padding:6px 8px"></th>';
-        h += '</tr></thead><tbody>';
-        for (var i = 0; i < board.length; i++) {
-          var b = board[i];
-          var scoreColor = b.score >= 0.5 ? 'var(--success)' : b.score >= 0.15 ? 'var(--text)' : 'var(--error)';
-          h += '<tr style="border-bottom:1px solid var(--border)">';
-          h += '<td style="padding:5px 8px;font-family:monospace">' + esc(b.addr) + '</td>';
-          h += '<td style="padding:5px 8px;text-align:right">' + (b.avgMs > 0 ? Math.round(b.avgMs) + 'ms' : '-') + '</td>';
-          h += '<td style="padding:5px 8px;text-align:right;color:' + scoreColor + ';font-weight:600">' + b.score.toFixed(2) + '</td>';
-          h += '<td style="padding:5px 8px;text-align:center;color:var(--success)">' + b.success + '</td>';
-          h += '<td style="padding:5px 8px;text-align:center;color:var(--error)">' + b.failure + '</td>';
-          h += '<td style="padding:5px 8px;text-align:center"><button onclick="removeResolver(\'' + esc(b.addr) + '\')" style="background:none;border:none;color:var(--error);cursor:pointer;font-size:14px;padding:2px 4px" title="Remove">&times;</button></td>';
-          h += '</tr>';
-        }
-        h += '</tbody></table>';
-        el.innerHTML = h;
+        document.getElementById('resolverActiveCount').textContent = board.length;
+        el.innerHTML = _buildScoreboardTable(board, true, false);
+        // Also fetch bank count for the tab badge
+        try {
+          var br = await fetch('/api/resolvers/bank');
+          if (br.ok) { var bd = await br.json(); document.getElementById('resolverBankCount').textContent = bd.count || 0; }
+        } catch (e2) { }
       } catch (e) { el.innerHTML = '<div style="color:var(--error)">' + esc(e.message) + '</div>' }
     }
+    async function _fetchBankBoard() {
+      var el = document.getElementById('resolverBankListEl');
+      try {
+        var r = await fetch('/api/resolvers/bank');
+        if (!r.ok) throw new Error(await r.text());
+        var data = await r.json();
+        var bank = data.bank || [];
+        var countEl = document.getElementById('resolverBankCount');
+        countEl.textContent = data.count || 0;
+        countEl.style.color = (data.count || 0) > 500 ? 'var(--error)' : '';
+        var activeCount = 0;
+        bank.forEach(function (b) { if (b.active) activeCount++ });
+        document.getElementById('resolverActiveCount').textContent = activeCount;
+        updateResolversBadge(activeCount, data.count || 0);
+        el.innerHTML = _buildScoreboardTable(bank, true, true);
+        previewBankCleanup();
+      } catch (e) { el.innerHTML = '<div style="color:var(--error)">' + esc(e.message) + '</div>' }
+    }
+    function switchResolverTab(tab) {
+      currentResolverTab = tab;
+      document.getElementById('resolverTabActive').classList.toggle('active', tab === 'active');
+      document.getElementById('resolverTabBank').classList.toggle('active', tab === 'bank');
+      document.getElementById('resolverTabActive').style.borderBottom = tab === 'active' ? '2px solid var(--accent)' : 'none';
+      document.getElementById('resolverTabBank').style.borderBottom = tab === 'bank' ? '2px solid var(--accent)' : 'none';
+      document.getElementById('resolverPanelActive').style.display = tab === 'active' ? '' : 'none';
+      document.getElementById('resolverPanelBank').style.display = tab === 'bank' ? '' : 'none';
+      if (tab === 'active') _fetchActiveBoard();
+      else _fetchBankBoard();
+    }
     async function openResolversModal() {
-      var el = document.getElementById('resolversListEl');
-      el.innerHTML = '<div style="color:var(--text-dim)">' + t('loading') + '</div>';
       document.getElementById('resolversModal').classList.add('active');
-      await _fetchResolversBoard(el);
+      // Load autoScan from active profile
+      var autoScanEl = document.getElementById('bankAutoScan');
+      if (autoScanEl && profiles && profiles.profiles && activeProfileId) {
+        var p = profiles.profiles.find(function (x) { return x.id === activeProfileId });
+        if (p) autoScanEl.checked = p.config.autoScan !== false;
+      }
+      switchResolverTab('active');
+      refreshResolversBadge();
       if (resolversRefreshTimer) clearInterval(resolversRefreshTimer);
       resolversRefreshTimer = setInterval(function () {
         if (!document.getElementById('resolversModal').classList.contains('active')) {
           clearInterval(resolversRefreshTimer); resolversRefreshTimer = null; return;
         }
-        _fetchResolversBoard(document.getElementById('resolversListEl'));
+        if (currentResolverTab === 'active') _fetchActiveBoard();
+        else _fetchBankBoard();
       }, 3000);
     }
     function closeResolversModal() {
       document.getElementById('resolversModal').classList.remove('active');
       if (resolversRefreshTimer) { clearInterval(resolversRefreshTimer); resolversRefreshTimer = null; }
     }
+    function openScannerFromBank() {
+      closeResolversModal();
+      openScanner();
+    }
+    async function doRescanFromBank() {
+      closeResolversModal();
+      showToast(t('rescan_started'));
+      document.getElementById('progressPanel').innerHTML = '';
+      showInitProgress();
+      try { await fetch('/api/rescan', { method: 'POST' }) } catch (e) { }
+      setTimeout(function () { loadChannels().then(function () { if (selectedChannel > 0) loadMessages(selectedChannel) }); refreshResolversBadge(); }, 3000);
+    }
+    async function toggleBankAutoScan() {
+      var checked = document.getElementById('bankAutoScan').checked;
+      if (!profiles || !profiles.profiles || !activeProfileId) return;
+      var p = profiles.profiles.find(function (x) { return x.id === activeProfileId });
+      if (!p) return;
+      var profile = JSON.parse(JSON.stringify(p));
+      profile.config.autoScan = checked ? undefined : false;
+      try {
+        await fetch('/api/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'update', profile: profile, skipCheck: true }) });
+        await loadProfiles();
+      } catch (e) { showToast(e.message) }
+    }
     async function removeResolver(addr) {
       try {
         await fetch('/api/resolvers/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ addr: addr }) });
-        _fetchResolversBoard(document.getElementById('resolversListEl'));
+        _fetchActiveBoard();
+      } catch (e) { }
+    }
+    async function removeResolverFromBank(addr) {
+      try {
+        await fetch('/api/resolvers/bank', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ addrs: [addr] }) });
+        _fetchBankBoard();
       } catch (e) { }
     }
     async function resetScoreboard() {
       try {
         await fetch('/api/resolvers/reset-stats', { method: 'POST' });
-        _fetchResolversBoard(document.getElementById('resolversListEl'));
+        if (currentResolverTab === 'active') _fetchActiveBoard();
+        else _fetchBankBoard();
       } catch (e) { }
     }
     function copyResolversList() {
-      var rows = document.querySelectorAll('#resolversListEl tbody tr');
+      var panelId = currentResolverTab === 'active' ? 'resolverPanelActive' : 'resolverBankListEl';
+      var rows = document.querySelectorAll('#' + panelId + ' tbody tr');
       var lines = [];
       rows.forEach(function (tr) {
         var cells = tr.querySelectorAll('td');
@@ -3644,6 +3866,41 @@
       });
       if (!lines.length) { showToast(t('no_active_resolvers')); return }
       navigator.clipboard.writeText(lines.join('\n')).then(function () { showToast(t('copied')) });
+    }
+    async function previewBankCleanup() {
+      var val = parseFloat(document.getElementById('bankCleanupSlider').value) || 0.1;
+      document.getElementById('bankCleanupValue').textContent = val.toFixed(2);
+      try {
+        var r = await fetch('/api/resolvers/bank/cleanup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minScore: val, dryRun: true }) });
+        if (!r.ok) return;
+        var data = await r.json();
+        document.getElementById('bankCleanupPreview').innerHTML = '<span style="color:var(--error)">' + data.removed + '</span> ' + t('would_be_removed') + ', <span style="color:var(--success)">' + data.remaining + '</span> ' + t('would_remain');
+      } catch (e) { }
+    }
+    async function doBankCleanup() {
+      var val = parseFloat(document.getElementById('bankCleanupSlider').value) || 0.1;
+      try {
+        var r = await fetch('/api/resolvers/bank/cleanup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minScore: val }) });
+        if (!r.ok) { showToast('Cleanup failed'); return }
+        var data = await r.json();
+        showToast(t('removed') + ': ' + data.removed + ', ' + t('remaining') + ': ' + data.remaining);
+        _fetchBankBoard();
+        refreshResolversBadge();
+      } catch (e) { showToast(e.message) }
+    }
+    async function addResolversToBank() {
+      var text = document.getElementById('bankAddResolvers').value.trim();
+      var resolvers = text.split(/[\n,;\s]+/).map(function (s) { return s.trim() }).filter(Boolean);
+      if (!resolvers.length) return;
+      try {
+        var r = await fetch('/api/resolvers/bank', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resolvers: resolvers }) });
+        if (!r.ok) { showToast('Add failed'); return }
+        var data = await r.json();
+        showToast(t('added') + ': ' + data.added);
+        document.getElementById('bankAddResolvers').value = '';
+        _fetchBankBoard();
+        refreshResolversBadge();
+      } catch (e) { showToast(e.message) }
     }
 
     // ===== BACKGROUND IMAGE =====

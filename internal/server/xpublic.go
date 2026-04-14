@@ -82,7 +82,7 @@ func NewXPublicReader(accounts []string, feed *Feed, msgLimit int, baseCh int, i
 }
 
 func normalizeXRSSInstances(instancesCSV string) []string {
-	defaults := []string{"http://nitter.net", "https://nitter.net"}
+	defaults := []string{"https://nitter.net", "http://nitter.net"}
 	if strings.TrimSpace(instancesCSV) == "" {
 		return defaults
 	}

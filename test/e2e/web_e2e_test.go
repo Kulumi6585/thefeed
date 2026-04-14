@@ -604,3 +604,205 @@ func TestE2E_WebUI_NewFeatures(t *testing.T) {
 		}
 	}
 }
+
+// ===== RESOLVER BANK TESTS =====
+
+func TestE2E_ResolverBank_EmptyByDefault(t *testing.T) {
+	base, _ := startWebServer(t)
+
+	resp := getJSON(t, base+"/api/resolvers/bank")
+	m := decodeJSON(t, resp)
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	count, _ := m["count"].(float64)
+	if count != 0 {
+		t.Errorf("expected 0 bank resolvers, got %v", count)
+	}
+}
+
+func TestE2E_ResolverBank_AddResolvers(t *testing.T) {
+	base, _ := startWebServer(t)
+
+	body := `{"resolvers":["8.8.8.8","1.1.1.1","8.8.8.8"]}`
+	resp := postJSON(t, base+"/api/resolvers/bank", body)
+	m := decodeJSON(t, resp)
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	// 8.8.8.8 appears twice but should be deduplicated
+	added, _ := m["added"].(float64)
+	total, _ := m["total"].(float64)
+	if added != 2 {
+		t.Errorf("expected 2 added, got %v", added)
+	}
+	if total != 2 {
+		t.Errorf("expected 2 total, got %v", total)
+	}
+
+	// Verify via GET
+	resp2 := getJSON(t, base+"/api/resolvers/bank")
+	m2 := decodeJSON(t, resp2)
+	count, _ := m2["count"].(float64)
+	if count != 2 {
+		t.Errorf("GET bank: expected 2, got %v", count)
+	}
+}
+
+func TestE2E_ResolverBank_DeleteResolvers(t *testing.T) {
+	base, _ := startWebServer(t)
+
+	// Add some resolvers first
+	postJSON(t, base+"/api/resolvers/bank", `{"resolvers":["8.8.8.8","1.1.1.1","4.4.4.4"]}`).Body.Close()
+
+	// Delete one
+	req, _ := http.NewRequest(http.MethodDelete, base+"/api/resolvers/bank",
+		strings.NewReader(`{"addrs":["8.8.8.8:53"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE: %v", err)
+	}
+	defer resp.Body.Close()
+	var m map[string]any
+	json.NewDecoder(resp.Body).Decode(&m)
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	removed, _ := m["removed"].(float64)
+	remaining, _ := m["remaining"].(float64)
+	if removed != 1 {
+		t.Errorf("expected 1 removed, got %v", removed)
+	}
+	if remaining != 2 {
+		t.Errorf("expected 2 remaining, got %v", remaining)
+	}
+}
+
+func TestE2E_ResolverBank_CleanupDryRun(t *testing.T) {
+	base, _ := startWebServer(t)
+
+	// Add resolvers
+	postJSON(t, base+"/api/resolvers/bank", `{"resolvers":["8.8.8.8","1.1.1.1"]}`).Body.Close()
+
+	// Dry-run cleanup with high threshold (should remove all, since they have no stats → score 0.2)
+	resp := postJSON(t, base+"/api/resolvers/bank/cleanup", `{"minScore":0.5,"dryRun":true}`)
+	m := decodeJSON(t, resp)
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	removed, _ := m["removed"].(float64)
+	remaining, _ := m["remaining"].(float64)
+	if removed != 2 {
+		t.Errorf("dryRun: expected 2 removed, got %v", removed)
+	}
+	if remaining != 0 {
+		t.Errorf("dryRun: expected 0 remaining, got %v", remaining)
+	}
+
+	// Verify bank is unchanged (dry run)
+	resp2 := getJSON(t, base+"/api/resolvers/bank")
+	m2 := decodeJSON(t, resp2)
+	count, _ := m2["count"].(float64)
+	if count != 2 {
+		t.Errorf("bank should still have 2 after dry run, got %v", count)
+	}
+}
+
+func TestE2E_ResolverBank_CleanupApply(t *testing.T) {
+	base, _ := startWebServer(t)
+
+	// Add resolvers
+	postJSON(t, base+"/api/resolvers/bank", `{"resolvers":["8.8.8.8","1.1.1.1"]}`).Body.Close()
+
+	// Apply cleanup with threshold below 0.2 → nothing removed (default score is 0.2)
+	resp := postJSON(t, base+"/api/resolvers/bank/cleanup", `{"minScore":0.1}`)
+	m := decodeJSON(t, resp)
+	removed, _ := m["removed"].(float64)
+	remaining, _ := m["remaining"].(float64)
+	if removed != 0 {
+		t.Errorf("expected 0 removed with 0.1 threshold, got %v", removed)
+	}
+	if remaining != 2 {
+		t.Errorf("expected 2 remaining, got %v", remaining)
+	}
+}
+
+func TestE2E_ResolverBank_MigrationFromProfile(t *testing.T) {
+	base, _ := startWebServer(t)
+
+	// Create a profile with resolvers — they should be migrated to the bank
+	body := `{"action":"create","profile":{"id":"","nickname":"TestMigrate","config":{"domain":"test.example","key":"mypass","resolvers":["127.0.0.1:9999"],"queryMode":"single","rateLimit":5}}}`
+	resp := postJSON(t, base+"/api/profiles", body)
+	m := decodeJSON(t, resp)
+	if m["ok"] != true {
+		t.Fatalf("create profile: ok=%v", m["ok"])
+	}
+
+	// The resolvers should now be in the bank
+	resp2 := getJSON(t, base+"/api/resolvers/bank")
+	m2 := decodeJSON(t, resp2)
+	count, _ := m2["count"].(float64)
+	if count < 1 {
+		t.Errorf("expected at least 1 resolver in bank after migration, got %v", count)
+	}
+
+	// The profile should no longer have resolvers
+	resp3 := getJSON(t, base+"/api/profiles")
+	m3 := decodeJSON(t, resp3)
+	profs := m3["profiles"].([]any)
+	cfg := profs[0].(map[string]any)["config"].(map[string]any)
+	resolvers := cfg["resolvers"]
+	if resolvers != nil {
+		r, ok := resolvers.([]any)
+		if ok && len(r) > 0 {
+			t.Errorf("expected profile resolvers to be empty after migration, got %v", resolvers)
+		}
+	}
+}
+
+func TestE2E_ResolverBank_ConfigAddsToBank(t *testing.T) {
+	base, _ := startWebServer(t)
+
+	// POST /api/config with resolvers should add them to the bank
+	cfg := `{"domain":"test.example.com","key":"testpass","resolvers":["127.0.0.1:19999"],"queryMode":"single","rateLimit":10}`
+	resp := postJSON(t, base+"/api/config", cfg)
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("POST /api/config status=%d body=%s", resp.StatusCode, body)
+	}
+
+	// Check that bank has the resolver
+	resp2 := getJSON(t, base+"/api/resolvers/bank")
+	m2 := decodeJSON(t, resp2)
+	count, _ := m2["count"].(float64)
+	if count < 1 {
+		t.Errorf("expected at least 1 resolver in bank after config POST, got %v", count)
+	}
+}
+
+func TestE2E_ResolverBank_MethodNotAllowed(t *testing.T) {
+	base, _ := startWebServer(t)
+
+	req, _ := http.NewRequest(http.MethodPut, base+"/api/resolvers/bank", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 405 {
+		t.Errorf("expected 405, got %d", resp.StatusCode)
+	}
+}
+
+func TestE2E_ResolverBank_CleanupBadRequest(t *testing.T) {
+	base, _ := startWebServer(t)
+
+	// Missing or invalid minScore
+	resp := postJSON(t, base+"/api/resolvers/bank/cleanup", `{"minScore":0}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != 400 {
+		t.Errorf("expected 400 for minScore=0, got %d", resp.StatusCode)
+	}
+}
