@@ -1121,7 +1121,7 @@ func (s *Server) refreshChannel(channelNum int) {
 	s.mu.RUnlock()
 	if prevID > 0 && ch.LastMsgID == prevID && ch.ContentHash == prevHash && len(prevMsgs) > 0 {
 		s.addLog(fmt.Sprintf("Channel %s: no changes (last ID: %d)", ch.Name, prevID))
-		s.broadcast(fmt.Sprintf("event: update\ndata: {\"type\":\"messages\",\"channel\":%d}\n\n", channelNum))
+		s.broadcast(fmt.Sprintf("event: update\ndata: {\"type\":\"no_changes\",\"channel\":%d}\n\n", channelNum))
 		return
 	}
 

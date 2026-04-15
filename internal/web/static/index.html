@@ -1586,6 +1586,52 @@
           <button class="btn btn-flat" onclick="clearBgImage()" style="font-size:11px;padding:4px 10px;color:var(--error)" data-i18n="clear_bg">Clear</button>
         </div>
       </div>
+      <!-- Android-only: App Customization -->
+      <div id="androidAppSection" style="display:none;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+        <label style="font-size:13px;font-weight:600;color:var(--text)" data-i18n="app_customization">App Customization</label>
+        <div style="margin-top:8px">
+          <label style="font-size:12px;color:var(--text-dim)" data-i18n="app_name_label">App Name</label>
+          <input type="text" id="customAppName" placeholder="thefeed"
+            style="width:100%;margin-top:4px;padding:8px 12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:13px;box-sizing:border-box">
+        </div>
+        <div style="margin-top:8px">
+          <label style="font-size:12px;color:var(--text-dim)" data-i18n="app_icon_label">App Icon</label>
+          <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+            <img id="customIconPreview" src="" style="width:40px;height:40px;border-radius:8px;border:1px solid var(--border);display:none;object-fit:cover">
+            <input type="file" id="customIconInput" accept="image/*" style="flex:1;font-size:12px;color:var(--text)">
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:10px">
+          <button class="btn btn-primary" onclick="applyAppCustomization()" style="font-size:12px;padding:6px 14px" data-i18n="app_apply">Apply</button>
+          <button class="btn btn-flat" onclick="resetAppCustomization()" style="font-size:12px;padding:6px 14px;color:var(--error)" data-i18n="app_reset">Reset</button>
+        </div>
+      </div>
+      <!-- Android-only: App Password -->
+      <div id="androidPasswordSection" style="display:none;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+        <label style="font-size:13px;font-weight:600;color:var(--text)" data-i18n="app_password">App Password</label>
+        <div id="passwordSetSection" style="margin-top:8px">
+          <input type="password" id="appPasswordInput" placeholder=""
+            data-i18n-ph="password_new_ph"
+            style="width:100%;padding:8px 12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:13px;box-sizing:border-box;margin-bottom:6px">
+          <input type="password" id="appPasswordConfirm" placeholder=""
+            data-i18n-ph="password_confirm_ph"
+            style="width:100%;padding:8px 12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:13px;box-sizing:border-box">
+          <div id="passwordError" style="color:var(--error);font-size:12px;margin-top:4px;display:none"></div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button class="btn btn-primary" onclick="setAppPassword()" style="font-size:12px;padding:6px 14px" data-i18n="password_set">Set Password</button>
+          </div>
+        </div>
+        <div id="passwordRemoveSection" style="margin-top:8px;display:none">
+          <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px" data-i18n="password_active">Password is active</div>
+          <input type="password" id="appPasswordCurrent" placeholder=""
+            data-i18n-ph="password_current_ph"
+            style="width:100%;padding:8px 12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:13px;box-sizing:border-box">
+          <div id="passwordRemoveError" style="color:var(--error);font-size:12px;margin-top:4px;display:none"></div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button class="btn btn-flat" onclick="removeAppPassword()" style="font-size:12px;padding:6px 14px;color:var(--error)" data-i18n="password_remove">Remove Password</button>
+          </div>
+        </div>
+      </div>
       <div class="modal-actions">
         <button class="btn btn-flat" onclick="closeSettings()" data-i18n="cancel">Cancel</button>
         <button class="btn btn-primary" onclick="saveSettings()" data-i18n="save">Save</button>
@@ -1900,7 +1946,7 @@
         copied: 'کپی شد!', copy: 'کپی', active: 'فعال',
         private: 'خصوصی', x_posts: 'پست‌های X', x_label: 'X', no_config: 'ابتدا پروفایل را ذخیره کنید',
         refreshing: 'در حال بروزرسانی...', fetching_channel: 'در حال دریافت کانال...',
-        msg_copied: 'پیام کپی شد!', rescan_started: 'بررسی مجدد شروع شد',
+        msg_copied: 'پیام کپی شد!', rescan_started: 'بررسی مجدد شروع شد', no_new_messages: 'پیام جدیدی نیست',
         add_manual: '✎ ساخت دستی', rescan: 'بررسی مجدد',
         new_messages: 'پیام جدید', missed_messages: '{n} پیام از دست رفته یا حذف شده',
         clear_cache: 'پاک کردن کش', cache_cleared: 'کش پاک شد!',
@@ -2032,7 +2078,7 @@
         copied: 'URI copied!', copy: 'Copy', active: 'Active',
         private: 'Private', x_posts: 'X Posts', x_label: 'X', no_config: 'Save a profile first',
         refreshing: 'Refreshing...', fetching_channel: 'Fetching channel...',
-        msg_copied: 'Message copied!', rescan_started: 'Rescan started',
+        msg_copied: 'Message copied!', rescan_started: 'Rescan started', no_new_messages: 'No new messages',
         add_manual: '✎ Create Manually', rescan: 'Rescan',
         new_messages: 'New messages', missed_messages: '{n} messages missed or deleted',
         clear_cache: 'Clear Cache', cache_cleared: 'Cache cleared!',
@@ -2127,6 +2173,26 @@
         dns_timeout: 'DNS Query Timeout (s)',
         auto_scan: 'Automatic hourly resolver check',
         scanner_clear_targets: '\uD83D\uDDD1 Clear',
+        app_customization: 'App Customization',
+        app_name_label: 'App Name',
+        app_icon_label: 'App Icon',
+        app_apply: 'Apply',
+        app_reset: 'Reset',
+        app_shortcut_created: 'Shortcut created!',
+        app_shortcut_failed: 'Failed to create shortcut',
+        app_reset_done: 'Reset done!',
+        app_password: 'App Password',
+        password_new_ph: 'New password',
+        password_confirm_ph: 'Confirm password',
+        password_current_ph: 'Current password',
+        password_set: 'Set Password',
+        password_remove: 'Remove Password',
+        password_active: 'Password is active',
+        password_set_ok: 'Password set!',
+        password_removed: 'Password removed!',
+        password_mismatch: 'Passwords do not match',
+        password_wrong: 'Wrong password',
+        password_empty: 'Password cannot be empty',
       }
     };
     var lang = localStorage.getItem('thefeed_lang') || 'fa';
@@ -2332,6 +2398,7 @@
     function openSettings() {
       renderLatestVersion();
       applyThemeButtons();
+      initAndroidSettings();
       document.getElementById('settingsModal').classList.add('active');
     }
     function closeSettings() { document.getElementById('settingsModal').classList.remove('active') }
@@ -2341,6 +2408,109 @@
       try { await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fontSize: fs, debug: dbg }) }) } catch (e) { }
       closeSettings();
     }
+
+    // ===== ANDROID SETTINGS =====
+    function initAndroidSettings() {
+      if (typeof Android === 'undefined') return;
+      // Show Android-only sections
+      document.getElementById('androidAppSection').style.display = '';
+      document.getElementById('androidPasswordSection').style.display = '';
+      // Populate current custom name
+      try {
+        var name = Android.getCustomAppName();
+        if (name) document.getElementById('customAppName').value = name;
+      } catch (e) { }
+      // Show correct password section
+      try {
+        var hasPw = Android.hasPassword();
+        document.getElementById('passwordSetSection').style.display = hasPw ? 'none' : '';
+        document.getElementById('passwordRemoveSection').style.display = hasPw ? '' : 'none';
+      } catch (e) { }
+    }
+
+    var _customIconData = null;
+    (function () {
+      // Listen for icon file selection
+      document.addEventListener('DOMContentLoaded', function () {
+        var inp = document.getElementById('customIconInput');
+        if (!inp) return;
+        inp.addEventListener('change', function () {
+          var file = this.files && this.files[0];
+          if (!file) return;
+          var reader = new FileReader();
+          reader.onload = function (e) {
+            _customIconData = e.target.result;
+            var preview = document.getElementById('customIconPreview');
+            preview.src = _customIconData;
+            preview.style.display = '';
+          };
+          reader.readAsDataURL(file);
+        });
+      });
+    })();
+
+    function applyAppCustomization() {
+      if (typeof Android === 'undefined') return;
+      var name = document.getElementById('customAppName').value.trim() || 'thefeed';
+      if (!_customIconData) { showToast(t('app_icon_label')); return }
+      try {
+        var ok = Android.createAppShortcut(name, _customIconData);
+        showToast(ok ? t('app_shortcut_created') : t('app_shortcut_failed'));
+      } catch (e) { showToast(t('app_shortcut_failed')) }
+    }
+
+    function resetAppCustomization() {
+      if (typeof Android === 'undefined') return;
+      try {
+        Android.resetAppShortcut();
+        document.getElementById('customAppName').value = '';
+        document.getElementById('customIconPreview').style.display = 'none';
+        document.getElementById('customIconInput').value = '';
+        _customIconData = null;
+        showToast(t('app_reset_done'));
+      } catch (e) { }
+    }
+
+    function setAppPassword() {
+      if (typeof Android === 'undefined') return;
+      var pw = document.getElementById('appPasswordInput').value;
+      var confirm = document.getElementById('appPasswordConfirm').value;
+      var errEl = document.getElementById('passwordError');
+      errEl.style.display = 'none';
+      if (!pw) { errEl.textContent = t('password_empty'); errEl.style.display = ''; return }
+      if (pw !== confirm) { errEl.textContent = t('password_mismatch'); errEl.style.display = ''; return }
+      try {
+        var ok = Android.setPassword(pw);
+        if (ok) {
+          showToast(t('password_set_ok'));
+          document.getElementById('appPasswordInput').value = '';
+          document.getElementById('appPasswordConfirm').value = '';
+          document.getElementById('passwordSetSection').style.display = 'none';
+          document.getElementById('passwordRemoveSection').style.display = '';
+        }
+      } catch (e) { }
+    }
+
+    function removeAppPassword() {
+      if (typeof Android === 'undefined') return;
+      var pw = document.getElementById('appPasswordCurrent').value;
+      var errEl = document.getElementById('passwordRemoveError');
+      errEl.style.display = 'none';
+      if (!pw) { errEl.textContent = t('password_empty'); errEl.style.display = ''; return }
+      try {
+        var ok = Android.removePassword(pw);
+        if (ok) {
+          showToast(t('password_removed'));
+          document.getElementById('appPasswordCurrent').value = '';
+          document.getElementById('passwordSetSection').style.display = '';
+          document.getElementById('passwordRemoveSection').style.display = 'none';
+        } else {
+          errEl.textContent = t('password_wrong');
+          errEl.style.display = '';
+        }
+      } catch (e) { }
+    }
+
     async function checkLatestVersion() {
       var btn = document.getElementById('checkVersionBtn');
       var prevText = btn ? btn.textContent : '';
@@ -2425,7 +2595,9 @@
           closeProfiles();
           await selectChannel(1); return
         }
-        if (data && typeof data === 'object' && data.channel) {
+        if (data && typeof data === 'object' && data.type === 'no_changes') {
+          showToast(t('no_new_messages'));
+        } else if (data && typeof data === 'object' && data.channel) {
           if (data.channel === snapChannel) await loadMessages(data.channel)
         } else if (snapChannel > 0) { await loadMessages(snapChannel) }
         updateSendPanel();

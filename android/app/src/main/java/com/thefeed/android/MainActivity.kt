@@ -1,6 +1,7 @@
 package com.thefeed.android
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -11,12 +12,17 @@ import android.os.Looper
 import android.os.PowerManager
 import android.net.Uri
 import android.provider.Settings
+import android.text.InputType
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.view.View
+import android.view.inputmethod.EditorInfo
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.webkit.JsResult
 import android.webkit.WebChromeClient
@@ -38,6 +44,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var txtStatus: TextView
     private val handler = Handler(Looper.getMainLooper())
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
+    private var lockScreenVisible = false
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -78,7 +85,55 @@ class MainActivity : ComponentActivity() {
         configureWebView()
         registerBackHandler()
         startThefeedService()
-        waitForServerThenLoad()
+
+        if (isPasswordSet()) {
+            showLockScreen()
+        } else {
+            waitForServerThenLoad()
+        }
+    }
+
+    private fun isPasswordSet(): Boolean {
+        val prefs = getSharedPreferences(ThefeedService.PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(AndroidBridge.PREF_PASSWORD_HASH, null) != null
+    }
+
+    @SuppressLint("SetTextI18n")
+    private fun showLockScreen() {
+        lockScreenVisible = true
+        val lockOverlay = findViewById<LinearLayout>(R.id.lockOverlay)
+        val lockInput = findViewById<EditText>(R.id.lockPasswordInput)
+        val lockBtn = findViewById<Button>(R.id.lockUnlockBtn)
+        val lockError = findViewById<TextView>(R.id.lockError)
+
+        lockOverlay.visibility = View.VISIBLE
+        webView.visibility = View.GONE
+        txtStatus.visibility = View.GONE
+
+        val bridge = AndroidBridge(this)
+
+        fun tryUnlock() {
+            val pw = lockInput.text.toString()
+            if (bridge.checkPassword(pw)) {
+                lockOverlay.visibility = View.GONE
+                webView.visibility = View.VISIBLE
+                lockScreenVisible = false
+                lockInput.text.clear()
+                lockError.visibility = View.GONE
+                waitForServerThenLoad()
+            } else {
+                lockError.text = "Wrong password"
+                lockError.visibility = View.VISIBLE
+            }
+        }
+
+        lockBtn.setOnClickListener { tryUnlock() }
+        lockInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                tryUnlock()
+                true
+            } else false
+        }
     }
 
     private fun registerBackHandler() {
@@ -86,11 +141,13 @@ class MainActivity : ComponentActivity() {
             override fun handleOnBackPressed() {
                 // Check if the chat view is open (mobile nav). If yes, go back
                 // to the channel list. If already on the channel list, minimize.
+                // Uses openSidebar() directly instead of webView.goBack() to avoid
+                // history-stack mismatches that can leave the UI stuck mid-transition.
                 webView.evaluateJavascript(
                     "(document.getElementById('app').classList.contains('chat-open')).toString()"
                 ) { result ->
                     if (result.trim('"') == "true") {
-                        webView.goBack()
+                        webView.evaluateJavascript("openSidebar(); history.back();", null)
                     } else {
                         moveTaskToBack(true)
                     }
@@ -159,6 +216,7 @@ class MainActivity : ComponentActivity() {
         txtStatus.visibility = if (msg.isEmpty()) View.GONE else View.VISIBLE
     }
 
+    @SuppressLint("SetJavaScriptEnabled")
     private fun configureWebView() {
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(
@@ -228,6 +286,8 @@ class MainActivity : ComponentActivity() {
             allowContentAccess = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         }
+
+        webView.addJavascriptInterface(AndroidBridge(this), "Android")
     }
 
     /**
