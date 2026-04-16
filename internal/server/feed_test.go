@@ -3,6 +3,8 @@ package server
 import (
 	"testing"
 
+	"github.com/gotd/td/tg"
+
 	"github.com/sartoopjj/thefeed/internal/protocol"
 )
 
@@ -91,5 +93,78 @@ func TestFeedLargeMessages(t *testing.T) {
 	}
 	if len(data0) == 0 {
 		t.Error("block data should not be empty")
+	}
+}
+
+func TestApplyTextURLEntities(t *testing.T) {
+	tests := []struct {
+		name     string
+		text     string
+		entities []tg.MessageEntityClass
+		want     string
+	}{
+		{
+			name: "no entities",
+			text: "hello world",
+			want: "hello world",
+		},
+		{
+			name: "text url entity",
+			text: "Check out this link for details",
+			entities: []tg.MessageEntityClass{
+				&tg.MessageEntityTextURL{Offset: 10, Length: 9, URL: "https://example.com"},
+			},
+			want: "Check out this link (https://example.com) for details",
+		},
+		{
+			name: "display text equals url",
+			text: "Visit https://example.com today",
+			entities: []tg.MessageEntityClass{
+				&tg.MessageEntityTextURL{Offset: 6, Length: 19, URL: "https://example.com"},
+			},
+			want: "Visit https://example.com today",
+		},
+		{
+			name: "javascript url rejected",
+			text: "click here to win",
+			entities: []tg.MessageEntityClass{
+				&tg.MessageEntityTextURL{Offset: 0, Length: 10, URL: "javascript:alert(1)"},
+			},
+			want: "click here to win",
+		},
+		{
+			name: "multiple entities",
+			text: "see first and second links",
+			entities: []tg.MessageEntityClass{
+				&tg.MessageEntityTextURL{Offset: 4, Length: 5, URL: "https://one.com"},
+				&tg.MessageEntityTextURL{Offset: 14, Length: 6, URL: "https://two.com"},
+			},
+			want: "see first (https://one.com) and second (https://two.com) links",
+		},
+		{
+			name: "emoji in text (surrogate pair)",
+			text: "📊 click here",
+			entities: []tg.MessageEntityClass{
+				&tg.MessageEntityTextURL{Offset: 3, Length: 10, URL: "https://poll.com"},
+			},
+			want: "📊 click here (https://poll.com)",
+		},
+		{
+			name: "non-text-url entities ignored",
+			text: "bold text here",
+			entities: []tg.MessageEntityClass{
+				&tg.MessageEntityBold{Offset: 0, Length: 4},
+			},
+			want: "bold text here",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := applyTextURLEntities(tt.text, tt.entities)
+			if got != tt.want {
+				t.Errorf("applyTextURLEntities() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

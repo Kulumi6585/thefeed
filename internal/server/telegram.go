@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -422,7 +423,7 @@ func (tr *TelegramReader) extractMessages(hist tg.MessagesMessagesClass, chatTyp
 }
 
 func (tr *TelegramReader) extractText(msg *tg.Message) string {
-	text := msg.Message
+	text := applyTextURLEntities(msg.Message, msg.Entities)
 
 	mediaPrefix := ""
 	if msg.Media != nil {
@@ -462,6 +463,71 @@ func (tr *TelegramReader) extractText(msg *tg.Message) string {
 	}
 
 	return text
+}
+
+// applyTextURLEntities embeds hyperlink URLs from MessageEntityTextURL entities
+// into the message text, producing output like "display text (https://url)".
+// This mirrors what the public HTML reader does when it extracts <a> tags.
+// Offsets are in UTF-16 code units per the Telegram API spec.
+func applyTextURLEntities(text string, entities []tg.MessageEntityClass) string {
+	type textURL struct {
+		offset int
+		length int
+		url    string
+	}
+	var urls []textURL
+	for _, e := range entities {
+		tu, ok := e.(*tg.MessageEntityTextURL)
+		if !ok {
+			continue
+		}
+		u := tu.URL
+		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+			continue
+		}
+		urls = append(urls, textURL{tu.Offset, tu.Length, u})
+	}
+	if len(urls) == 0 {
+		return text
+	}
+
+	// Process from end to start so earlier offsets stay valid.
+	sort.Slice(urls, func(i, j int) bool { return urls[i].offset > urls[j].offset })
+
+	runes := []rune(text)
+
+	// Build UTF-16 offset → rune index mapping.
+	utf16Pos := 0
+	utf16ToRune := make(map[int]int, len(runes)+1)
+	for i, r := range runes {
+		utf16ToRune[utf16Pos] = i
+		if r > 0xFFFF {
+			utf16Pos += 2
+		} else {
+			utf16Pos++
+		}
+	}
+	utf16ToRune[utf16Pos] = len(runes)
+
+	for _, u := range urls {
+		startIdx, ok1 := utf16ToRune[u.offset]
+		endIdx, ok2 := utf16ToRune[u.offset+u.length]
+		if !ok1 || !ok2 {
+			continue
+		}
+		// Skip if the display text already IS the URL.
+		if string(runes[startIdx:endIdx]) == u.url {
+			continue
+		}
+		ins := []rune(" (" + u.url + ")")
+		newRunes := make([]rune, 0, len(runes)+len(ins))
+		newRunes = append(newRunes, runes[:endIdx]...)
+		newRunes = append(newRunes, ins...)
+		newRunes = append(newRunes, runes[endIdx:]...)
+		runes = newRunes
+	}
+
+	return string(runes)
 }
 
 func (tr *TelegramReader) classifyDocument(media *tg.MessageMediaDocument) string {
