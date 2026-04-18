@@ -14,6 +14,7 @@ type Feed struct {
 	mu               sync.RWMutex
 	marker           [protocol.MarkerSize]byte
 	channels         []string
+	displayNames     map[int]string
 	blocks           map[int][][]byte
 	lastIDs          map[int]uint32
 	contentHashes    map[int]uint32
@@ -31,6 +32,7 @@ type Feed struct {
 func NewFeed(channels []string) *Feed {
 	f := &Feed{
 		channels:      channels,
+		displayNames:  make(map[int]string),
 		blocks:        make(map[int][][]byte),
 		lastIDs:       make(map[int]uint32),
 		contentHashes: make(map[int]uint32),
@@ -135,6 +137,7 @@ func (f *Feed) rebuildMetaBlocks() {
 		}
 		meta.Channels = append(meta.Channels, protocol.ChannelInfo{
 			Name:        name,
+			DisplayName: f.displayNames[chNum],
 			Blocks:      blockCount,
 			LastMsgID:   f.lastIDs[chNum],
 			ContentHash: f.contentHashes[chNum],
@@ -211,19 +214,20 @@ func (f *Feed) SetChannels(channels []string) {
 	f.rebuildMetaBlocks()
 }
 
-// SetChannelDisplayName updates the display name for a specific channel number (1-indexed).
-// This allows replacing the raw handle (e.g. "networkti") with the channel's
-// actual title (e.g. "Sarto") after it has been fetched.
+// SetChannelDisplayName stores a human-readable title for a channel (1-indexed).
+// It never mutates the handle in f.channels, which remains the stable identifier.
 func (f *Feed) SetChannelDisplayName(channelNum int, displayName string) {
+	if displayName == "" {
+		return
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	idx := channelNum - 1
-	if idx < 0 || idx >= len(f.channels) {
+	if channelNum < 1 || channelNum > len(f.channels) {
 		return
 	}
-	if displayName == "" || f.channels[idx] == displayName {
+	if f.displayNames[channelNum] == displayName {
 		return
 	}
-	f.channels[idx] = displayName
+	f.displayNames[channelNum] = displayName
 	f.rebuildMetaBlocks()
 }

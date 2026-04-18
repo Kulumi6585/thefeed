@@ -144,9 +144,7 @@ func (pr *PublicReader) fetchAll(ctx context.Context) {
 
 		pr.feed.UpdateChannel(chNum, msgs)
 		pr.feed.SetChatInfo(chNum, protocol.ChatTypeChannel, false)
-		if title != "" {
-			pr.feed.SetChannelDisplayName(chNum, title)
-		}
+		pr.feed.SetChannelDisplayName(chNum, title)
 		fetched++
 		log.Printf("[public] updated %s (%s): %d messages", username, title, len(msgs))
 	}
@@ -178,12 +176,10 @@ func (pr *PublicReader) fetchChannel(ctx context.Context, username string) ([]pr
 	if err != nil {
 		return nil, "", err
 	}
-	title := extractChannelTitle(body)
-	return msgs, title, nil
+	return msgs, extractChannelTitle(body), nil
 }
 
 // extractChannelTitle parses the channel display name from the Telegram public page.
-// It looks for <div class="tgme_channel_info_header_title"><span>Title</span></div>.
 func extractChannelTitle(body []byte) string {
 	doc, err := html.Parse(strings.NewReader(string(body)))
 	if err != nil {

@@ -81,6 +81,7 @@ type Metadata struct {
 // ChannelInfo describes a single feed channel.
 type ChannelInfo struct {
 	Name        string
+	DisplayName string   // human-readable title; empty means fall back to Name
 	Blocks      uint16
 	LastMsgID   uint32
 	ContentHash uint32   // CRC32 of serialized message data; changes on edits
@@ -104,12 +105,16 @@ func ContentHashOf(msgs []Message) uint32 {
 
 // SerializeMetadata encodes metadata into bytes for channel 0 blocks.
 // Format: marker(3) + timestamp(4) + nextFetch(4) + flags(1) + channelCount(2) + per-channel data
-// Per-channel: nameLen(1) + name + blocks(2) + lastMsgID(4) + contentHash(4) + chatType(1) + flags(1)
+// Per-channel: nameLen(1) + name + blocks(2) + lastMsgID(4) + contentHash(4) + chatType(1) + flags(1) + displayNameLen(1) + displayName
 func SerializeMetadata(m *Metadata) []byte {
 	// 3 marker + 4 timestamp + 4 nextFetch + 1 flags + 2 channel count + per-channel data
 	size := MarkerSize + 4 + 4 + 1 + 2
 	for _, ch := range m.Channels {
-		size += 1 + len(ch.Name) + 2 + 4 + 4 + 1 + 1 // +4 for contentHash
+		dn := ch.DisplayName
+		if len(dn) > 255 {
+			dn = dn[:255]
+		}
+		size += 1 + len(ch.Name) + 2 + 4 + 4 + 1 + 1 + 1 + len(dn)
 	}
 	buf := make([]byte, size)
 	off := 0
@@ -156,6 +161,14 @@ func SerializeMetadata(m *Metadata) []byte {
 		}
 		buf[off] = chFlags
 		off++
+		dnBytes := []byte(ch.DisplayName)
+		if len(dnBytes) > 255 {
+			dnBytes = dnBytes[:255]
+		}
+		buf[off] = byte(len(dnBytes))
+		off++
+		copy(buf[off:], dnBytes)
+		off += len(dnBytes)
 	}
 
 	return buf
@@ -213,8 +226,19 @@ func ParseMetadata(data []byte) (*Metadata, error) {
 		chFlags := data[off]
 		off++
 
+		var displayName string
+		if off < len(data) {
+			dnLen := int(data[off])
+			off++
+			if off+dnLen <= len(data) {
+				displayName = string(data[off : off+dnLen])
+				off += dnLen
+			}
+		}
+
 		m.Channels = append(m.Channels, ChannelInfo{
 			Name:        name,
+			DisplayName: displayName,
 			Blocks:      blocks,
 			LastMsgID:   lastID,
 			ContentHash: contentHash,

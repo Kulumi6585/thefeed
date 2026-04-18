@@ -3085,7 +3085,8 @@
         var needsFullRebuild = false;
         for (var ci = 0; ci < channels.length; ci++) {
           var ch = channels[ci], nm = ch.Name || ch.name || 'Channel ' + (ci + 1);
-          if (existingItems[ci].dataset.name !== nm) { needsFullRebuild = true; break }
+          var lbl = ch.DisplayName || ch.displayName || nm;
+          if (existingItems[ci].dataset.name !== nm || existingItems[ci].dataset.label !== lbl) { needsFullRebuild = true; break }
         }
         if (!needsFullRebuild) {
           for (var ui = 0; ui < channels.length; ui++) {
@@ -3113,21 +3114,22 @@
         if (title) h += '<div class="channel-section-title">' + esc(title) + '</div>';
         for (var j = 0; j < items.length; j++) {
           var e = items[j], num2 = e.idx + 1;
-          var name = e.ch.Name || e.ch.name || 'Channel ' + num2;
+          var handle = e.ch.Name || e.ch.name || 'Channel ' + num2;
+          var label = e.ch.DisplayName || e.ch.displayName || handle;
           var ct2 = e.ch.ChatType || e.ch.chatType || 0;
           var isPriv = e.ch.ChatType === 1 || e.ch.chatType === 1;
           var isX = ct2 === 2;
-          var avatarName = name;
-          if (isX && avatarName.toLowerCase().indexOf('x/') === 0) avatarName = avatarName.substring(2);
+          var avatarName = label;
+          if (isX && handle.toLowerCase().indexOf('x/') === 0) avatarName = handle.substring(2);
           if (avatarName.charAt(0) === '@') avatarName = avatarName.substring(1);
           var avatarText = (avatarName || '?').charAt(0).toUpperCase();
           var active = num2 === selectedChannel ? ' active' : '';
           var lastID = e.ch.LastMsgID || e.ch.lastMsgID || 0;
           var chNm2 = e.ch.Name || e.ch.name || '';
           var badge = (previousMsgIDs[chNm2] > 0 && lastID > previousMsgIDs[chNm2] && num2 !== selectedChannel) ? '<span class="ch-badge">NEW</span>' : '';
-          h += '<div class="ch-item' + active + '" data-name="' + escAttr(name) + '" onclick="selectChannel(' + num2 + ')">';
+          h += '<div class="ch-item' + active + '" data-name="' + escAttr(handle) + '" data-label="' + escAttr(label) + '" onclick="selectChannel(' + num2 + ')">';
           h += '<div class="ch-avatar">' + esc(avatarText) + '</div>';
-          h += '<div class="ch-info"><div class="ch-name">' + esc(name) + (isPriv ? '<span class="ch-type-tag">' + t('private') + '</span>' : (isX ? '<span class="ch-type-tag x-tag">' + t('x_label') + '</span>' : '')) + '</div>';
+          h += '<div class="ch-info"><div class="ch-name">' + esc(label) + (isPriv ? '<span class="ch-type-tag">' + t('private') + '</span>' : (isX ? '<span class="ch-type-tag x-tag">' + t('x_label') + '</span>' : '')) + '</div>';
           h += '<div class="ch-preview">' + badge + '</div></div></div>';
         }
         return h;
@@ -3154,7 +3156,7 @@
       currentMaxTimestamp = 0;
       newMsgScrollDone = false;
       openChat();
-      var ch = channels[num - 1]; var name = (ch && (ch.Name || ch.name)) || 'Channel ' + num;
+      var ch = channels[num - 1]; var name = (ch && (ch.DisplayName || ch.displayName || ch.Name || ch.name)) || 'Channel ' + num;
       document.getElementById('chatName').textContent = name;
       renderChannels(); updateSendPanel();
       document.getElementById('messages').innerHTML = '<div class="empty-state"><p>' + t('loading') + '</p></div>';
