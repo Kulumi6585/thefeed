@@ -3179,7 +3179,7 @@
       panel.insertBefore(item, panel.firstChild);
       // Safety auto-remove: metadata fetch typically completes within ~5 s;
       // the real block-progress bar replaces this one as soon as blocks arrive.
-      setTimeout(function () { var el = document.getElementById(id); if (el) el.remove() }, 8000);
+      setTimeout(function () { var el = document.getElementById(id); if (el) el.remove() }, 15000);
     }
 
     function updateSendPanel() {
