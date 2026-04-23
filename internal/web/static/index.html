@@ -3191,7 +3191,7 @@
           h += '<div class="ch-item' + active + '" data-name="' + escAttr(handle) + '" data-label="' + escAttr(label) + '" onclick="selectChannel(' + num2 + ')">';
           h += '<div class="ch-avatar">' + esc(avatarText) + '</div>';
           var chSubText = !isX ? (handle.charAt(0) === '@' ? handle : '@' + handle) : '';
-          h += '<div class="ch-info"><div class="ch-name">' + esc(label) + (isPriv ? '<span class="ch-type-tag">' + t('private') + '</span>' : (isX ? '<span class="ch-type-tag x-tag">' + t('x_label') + '</span>' : '')) + '</div>';
+          h += '<div class="ch-info"><div class="ch-name">' + formatIranTitleHtml(label) + (isPriv ? '<span class="ch-type-tag">' + t('private') + '</span>' : (isX ? '<span class="ch-type-tag x-tag">' + t('x_label') + '</span>' : '')) + '</div>';
           if (chSubText) h += '<div class="ch-sub">' + esc(chSubText) + '</div>';
           h += '<div class="ch-preview">' + badge + '</div></div></div>';
         }
@@ -3220,7 +3220,7 @@
       newMsgScrollDone = false;
       openChat();
       var ch = channels[num - 1]; var name = (ch && (ch.DisplayName || ch.displayName || ch.Name || ch.name)) || 'Channel ' + num;
-      document.getElementById('chatName').textContent = name;
+      document.getElementById('chatName').innerHTML = formatIranTitleHtml(name);
       var chHandle = (ch && (ch.Name || ch.name)) || '';
       var isXCh = ch && (ch.ChatType || ch.chatType) === 2;
       var subHandle = (!isXCh && chHandle) ? (chHandle.charAt(0) === '@' ? chHandle : '@' + chHandle) : '';
@@ -3696,6 +3696,9 @@
     }
 
     // ===== UTILITIES =====
+    function formatIranTitleHtml(s) {
+      return esc(s).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1em;vertical-align:middle">');
+    }
     function esc(s) { var d = document.createElement('div'); d.appendChild(document.createTextNode(s)); return d.innerHTML }
     function escAttr(s) { return esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;') }
     function linkify(raw) {
