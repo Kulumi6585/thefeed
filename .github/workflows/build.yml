@@ -53,7 +53,7 @@ jobs:
           go-version: '1.26'
 
       - name: Install UPX
-        if: matrix.goos == 'linux' || matrix.goos == 'windows'
+        if: (matrix.goos == 'linux' || matrix.goos == 'windows') && !matrix.android_arm
         run: sudo apt-get update && sudo apt-get install -y upx-ucl
 
       - name: Build Server
@@ -92,7 +92,7 @@ jobs:
           go build -trimpath -ldflags="${LDFLAGS}" -o "$out" ./cmd/client
 
       - name: Compress with UPX
-        if: matrix.goos == 'linux' || matrix.goos == 'windows'
+        if: (matrix.goos == 'linux' || matrix.goos == 'windows') && !matrix.android_arm
         run: |
           for f in build/*; do
             if [ -f "$f" ]; then
