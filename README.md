@@ -68,6 +68,12 @@ My wallet address:
 
 Thank you for your support ❤️
 
+## Links
+- My telegram channel: [@networkti](https://t.me/networkti)
+- Public TheFeed Configs: [@thefeedconfig](https://t.me/thefeedconfig)
+- Setup TheFeed server guide: [@networkti](https://t.me/networkti/25)
+- Setup TheFeed server with SlipGate guide: [@networkti](https://t.me/networkti/200)
+
 ## Quick Install (Server)
 
 One-line install (downloads latest release from GitHub)
