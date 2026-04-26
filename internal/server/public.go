@@ -540,13 +540,12 @@ func extractPollData(n *html.Node) string {
 			}
 		}
 	})
-	if question == "" && len(options) == 0 {
+	// Only return poll if both question and at least one option exist
+	if question == "" || len(options) == 0 {
 		return ""
 	}
 	result := "📊 " + question
-	if len(options) > 0 {
-		result += "\n" + strings.Join(options, "\n")
-	}
+	result += "\n" + strings.Join(options, "\n")
 	return result
 }
 

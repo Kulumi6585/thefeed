@@ -84,7 +84,9 @@ jobs:
           LDFLAGS="-s -w -X github.com/sartoopjj/thefeed/internal/version.Version=${VERSION} -X github.com/sartoopjj/thefeed/internal/version.Commit=${COMMIT} -X github.com/sartoopjj/thefeed/internal/version.Date=${DATE}"
           ext=""
           if [ "${{ matrix.goos }}" = "windows" ]; then ext=".exe"; fi
-          if [ "${{ matrix.android_arm }}" = "true" ]; then
+          if [ "${{ matrix.goos }}" = "android" ] && [ "${{ matrix.goarch }}" = "arm64" ]; then
+            out="build/thefeed-client-android-arm64"
+          elif [ "${{ matrix.android_arm }}" = "true" ]; then
             out="build/thefeed-client-android-arm"
           else
             out="build/thefeed-client-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}${ext}"
@@ -121,11 +123,11 @@ jobs:
       - name: Stage Android client binary as JNI library
         run: |
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          mkdir -p android/app/src/main/jniLibs/armeabi-v7a
+          # mkdir -p android/app/src/main/jniLibs/armeabi-v7a
           test -f artifacts/thefeed-client-android-arm64
-          test -f artifacts/thefeed-client-android-arm
+          # test -f artifacts/thefeed-client-android-arm
           cp artifacts/thefeed-client-android-arm64 android/app/src/main/jniLibs/arm64-v8a/libthefeed.so
-          cp artifacts/thefeed-client-android-arm android/app/src/main/jniLibs/armeabi-v7a/libthefeed.so
+          # cp artifacts/thefeed-client-android-arm android/app/src/main/jniLibs/armeabi-v7a/libthefeed.so
 
       - name: Decode signing keystore
         env:
@@ -161,8 +163,8 @@ jobs:
 
           APK_DIR=app/build/outputs/apk/$BT
           cp "$APK_DIR"/app-arm64-v8a-${BT}.apk   ../artifacts/thefeed-android-arm64.apk
-          cp "$APK_DIR"/app-armeabi-v7a-${BT}.apk  ../artifacts/thefeed-android-arm.apk
-          cp "$APK_DIR"/app-universal-${BT}.apk     ../artifacts/thefeed-android-universal.apk
+          # cp "$APK_DIR"/app-armeabi-v7a-${BT}.apk  ../artifacts/thefeed-android-arm.apk
+          # cp "$APK_DIR"/app-universal-${BT}.apk     ../artifacts/thefeed-android-universal.apk
 
       - name: Upload Android APK artifacts
         uses: actions/upload-artifact@v4
@@ -170,8 +172,8 @@ jobs:
           name: thefeed-android-apk
           path: |
             artifacts/thefeed-android-arm64.apk
-            artifacts/thefeed-android-arm.apk
-            artifacts/thefeed-android-universal.apk
+            # artifacts/thefeed-android-arm.apk
+            # artifacts/thefeed-android-universal.apk
 
   release:
     needs: [build, android-apk]
