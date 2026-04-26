@@ -54,21 +54,7 @@ All communication is encrypted with AES-256 and transmitted via standard DNS TXT
 
 ## Downloads
 
-| Platform | Architecture | Server | Client |
-|----------|-------------|--------|--------|
-| Linux | amd64 | [Download](https://github.com/sartoopjj/thefeed/releases/latest/download/thefeed-server-linux-amd64) | [Download](https://github.com/sartoopjj/thefeed/releases/latest/download/thefeed-client-linux-amd64) |
-| Linux | arm64 | [Download](https://github.com/sartoopjj/thefeed/releases/latest/download/thefeed-server-linux-arm64) | [Download](https://github.com/sartoopjj/thefeed/releases/latest/download/thefeed-client-linux-arm64) |
-| macOS | amd64 (Intel) | [Download](https://github.com/sartoopjj/thefeed/releases/latest/download/thefeed-server-darwin-amd64) | [Download](https://github.com/sartoopjj/thefeed/releases/latest/download/thefeed-client-darwin-amd64) |
-| macOS | arm64 (Apple Silicon) | [Download](https://github.com/sartoopjj/thefeed/releases/latest/download/thefeed-server-darwin-arm64) | [Download](https://github.com/sartoopjj/thefeed/releases/latest/download/thefeed-client-darwin-arm64) |
-| FreeBSD | amd64 | [Download](https://github.com/sartoopjj/thefeed/releases/latest/download/thefeed-server-freebsd-amd64) | [Download](https://github.com/sartoopjj/thefeed/releases/latest/download/thefeed-client-freebsd-amd64) |
-| FreeBSD | arm64 | [Download](https://github.com/sartoopjj/thefeed/releases/latest/download/thefeed-server-freebsd-arm64) | [Download](https://github.com/sartoopjj/thefeed/releases/latest/download/thefeed-client-freebsd-arm64) |
-| Windows | amd64 | [Download](https://github.com/sartoopjj/thefeed/releases/latest/download/thefeed-server-windows-amd64.exe) | [Download](https://github.com/sartoopjj/thefeed/releases/latest/download/thefeed-client-windows-amd64.exe) |
-
-| Android APK | Architecture | Download |
-|-------------|-------------|----------|
-| arm64 (v8a) | 64-bit | [Download](https://github.com/sartoopjj/thefeed/releases/latest/download/thefeed-android-arm64.apk) |
-| arm (v7a) | 32-bit | [Download](https://github.com/sartoopjj/thefeed/releases/latest/download/thefeed-android-arm.apk) |
-| Universal | All | [Download](https://github.com/sartoopjj/thefeed/releases/latest/download/thefeed-android-universal.apk) |
+[Releases](https://github.com/sartoopjj/thefeed/releases)
 
 ## Quick Install (Server)
 

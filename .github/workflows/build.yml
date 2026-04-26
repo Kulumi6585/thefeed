@@ -156,24 +156,25 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          VERSION=${GITHUB_REF_NAME:-dev}
           gradle wrapper --gradle-version 8.10.2
           if [ -f app/keystore.jks ]; then BT=release; TASK=assembleRelease; else BT=debug; TASK=assembleDebug; fi
 
           ./gradlew --no-daemon clean $TASK
 
           APK_DIR=app/build/outputs/apk/$BT
-          cp "$APK_DIR"/app-arm64-v8a-${BT}.apk   ../artifacts/thefeed-android-arm64.apk
-          # cp "$APK_DIR"/app-armeabi-v7a-${BT}.apk  ../artifacts/thefeed-android-arm.apk
-          # cp "$APK_DIR"/app-universal-${BT}.apk     ../artifacts/thefeed-android-universal.apk
+          cp "$APK_DIR"/app-arm64-v8a-${BT}.apk   ../artifacts/thefeed-android-${VERSION}-arm64.apk
+          # cp "$APK_DIR"/app-armeabi-v7a-${BT}.apk  ../artifacts/thefeed-android-${VERSION}-arm.apk
+          # cp "$APK_DIR"/app-universal-${BT}.apk     ../artifacts/thefeed-android-${VERSION}-universal.apk
 
       - name: Upload Android APK artifacts
         uses: actions/upload-artifact@v4
         with:
           name: thefeed-android-apk
           path: |
-            artifacts/thefeed-android-arm64.apk
-            # artifacts/thefeed-android-arm.apk
-            # artifacts/thefeed-android-universal.apk
+            artifacts/thefeed-android-*-arm64.apk
+            # artifacts/thefeed-android-*-arm.apk
+            # artifacts/thefeed-android-*-universal.apk
 
   release:
     needs: [build, android-apk]
@@ -198,13 +199,11 @@ jobs:
 
             | Platform | Architecture | Download |
             |----------|-------------|----------|
-            | Linux | amd64 | [thefeed-server-linux-amd64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-linux-amd64) / [client](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-linux-amd64) |
-            | Linux | arm64 | [thefeed-server-linux-arm64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-linux-arm64) / [client](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-linux-arm64) |
-            | macOS | amd64 (Intel) | [thefeed-server-darwin-amd64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-darwin-amd64) / [client](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-darwin-amd64) |
-            | macOS | arm64 (Apple Silicon) | [thefeed-server-darwin-arm64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-darwin-arm64) / [client](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-darwin-arm64) |
-            | FreeBSD | amd64 | [thefeed-server-freebsd-amd64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-freebsd-amd64) / [client](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-freebsd-amd64) |
-            | FreeBSD | arm64 | [thefeed-server-freebsd-arm64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-freebsd-arm64) / [client](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-freebsd-arm64) |
-            | Windows | amd64 | [thefeed-server-windows-amd64.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-windows-amd64.exe) / [client](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-windows-amd64.exe) |
-            | Android | arm64 (v8a) | [thefeed-android-arm64.apk](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-android-arm64.apk) |
-            | Android | arm (v7a) | [thefeed-android-arm.apk](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-android-arm.apk) |
-            | Android | Universal | [thefeed-android-universal.apk](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-android-universal.apk) |
+            | Linux | amd64 | [server|سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-linux-amd64) / [client|کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-${{ github.ref_name }}-linux-amd64) |
+            | Linux | arm64 | [server|سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-linux-arm64) / [client|کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-${{ github.ref_name }}-linux-arm64) |
+            | macOS | amd64 (Intel) | [server|سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-darwin-amd64) / [client|کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-${{ github.ref_name }}-darwin-amd64) |
+            | macOS | arm64 (Apple Silicon) | [server|سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-darwin-arm64) / [client|کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-${{ github.ref_name }}-darwin-arm64) |
+            | FreeBSD | amd64 | [server|سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-freebsd-amd64) / [client|کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-${{ github.ref_name }}-freebsd-amd64) |
+            | FreeBSD | arm64 | [server|سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-freebsd-arm64) / [client|کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-${{ github.ref_name }}-freebsd-arm64) |
+            | Windows | amd64 | [server|سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-windows-amd64.exe) / [client|کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-${{ github.ref_name }}-windows-amd64.exe) |
+            | Android | arm64 (v8a) | [thefeed-android-${{ github.ref_name }}-arm64.apk | اندروید](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-android-${{ github.ref_name }}-arm64.apk) |
