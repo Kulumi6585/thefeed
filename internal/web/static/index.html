@@ -2432,6 +2432,13 @@
     var currentMaxMsgID = 0;
     var currentMaxTimestamp = 0;
     var newMsgScrollDone = false;
+    // Per-channel state for the "new messages" separator. The separator is
+    // kept visible across re-renders for NEW_MSG_STICKY_MS by deferring the
+    // lastSeen-timestamp commit, so users actually have time to notice the
+    // new content before it gets marked seen.
+    var NEW_MSG_STICKY_MS = 10000; // how long the "new messages" tag stays
+    var newMsgSepLastSeen = {};    // ch name → lastSeenTs the current sep represents
+    var newMsgSepCommitTimer = {}; // ch name → setTimeout handle for deferred commit
     var refreshingChannels = {}; // tracks channels with an in-flight refresh
 
     // ===== MOBILE NAV =====
@@ -3259,9 +3266,15 @@
     }
 
     async function selectChannel(num) {
-      // Save lastSeen for previous channel
+      // Save lastSeen for previous channel and flush any pending sticky commit.
       if (selectedChannel > 0 && currentMaxTimestamp > 0) {
-        setLastSeenTimestamp(channelName(selectedChannel), currentMaxTimestamp);
+        var prevName = channelName(selectedChannel);
+        if (newMsgSepCommitTimer[prevName]) {
+          clearTimeout(newMsgSepCommitTimer[prevName]);
+          delete newMsgSepCommitTimer[prevName];
+          delete newMsgSepLastSeen[prevName];
+        }
+        setLastSeenTimestamp(prevName, currentMaxTimestamp);
       }
       selectedChannel = num;
       currentMaxMsgID = 0;
@@ -3349,6 +3362,7 @@
       if (!msgs || !msgs.length) { el.innerHTML = '<div class="empty-state"><p>' + t('no_messages') + '</p><p style="font-size:12px;opacity:.6;margin-top:6px">' + t('no_messages_hint') + '</p></div>'; return }
       // Check if user is near the bottom before re-render (within 150px)
       var wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+      var prevScrollTop = el.scrollTop; // for restoring scroll on re-render mid-session
       var isFirstRender = el.querySelector('.empty-state') !== null || el.querySelector('.msg') === null;
       msgs.sort(function (a, b) { return (a.Timestamp || a.timestamp || 0) - (b.Timestamp || b.timestamp || 0) });
       var html = '', lastDate = '';
@@ -3432,20 +3446,62 @@
       if (isFirstVisit && maxTimestamp > 0) {
         setLastSeenTimestamp(chName, maxTimestamp);
       }
-      // Update lastSeen when user has scrolled to the bottom (messages are "seen")
-      if (wasAtBottom && maxTimestamp > 0 && !isFirstVisit) {
-        setLastSeenTimestamp(chName, maxTimestamp);
-      }
-      // Scroll to new messages separator only on first render for this channel
-      if (newMsgSepInserted && !newMsgScrollDone) {
-        newMsgScrollDone = true;
-        setTimeout(function () {
-          var sep = document.getElementById('newMsgSep');
-          if (sep) sep.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 100);
-      } else if (isFirstRender || wasAtBottom) {
-        el.scrollTop = el.scrollHeight;
-        document.getElementById('scrollDownBtn').classList.remove('visible');
+
+      if (newMsgSepInserted) {
+        // The "new messages" separator is showing. Don't commit lastSeen
+        // immediately — keep the separator visible across re-renders for a
+        // few seconds so the user actually has time to notice it (otherwise
+        // the next refresh would dismiss it instantly).
+        var prevSepLastSeen = newMsgSepLastSeen[chName];
+        var sepIsNew = prevSepLastSeen !== lastSeenTs;
+        newMsgSepLastSeen[chName] = lastSeenTs;
+
+        // Only scroll to the separator the FIRST time we see this particular
+        // separator state — re-renders that don't introduce newer messages
+        // shouldn't yank the user's scroll position around.
+        if (sepIsNew) {
+          newMsgScrollDone = true;
+          setTimeout(function () {
+            var sep = document.getElementById('newMsgSep');
+            if (sep) sep.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 100);
+        } else if (wasAtBottom) {
+          // Same separator, but the user is parked at the bottom — keep them
+          // at the new bottom so they see the freshest message.
+          el.scrollTop = el.scrollHeight;
+        } else {
+          // Same separator, just a re-render (e.g. another refresh tick or
+          // additional new messages within the sticky window). innerHTML reset
+          // scrollTop to 0; restore the user's previous position so they
+          // aren't teleported away from what they were reading.
+          el.scrollTop = prevScrollTop;
+        }
+
+        // Defer (or extend) the commit. After the sticky window expires we
+        // mark messages as seen so the separator naturally goes away on the
+        // next render.
+        if (newMsgSepCommitTimer[chName]) clearTimeout(newMsgSepCommitTimer[chName]);
+        var commitTs = maxTimestamp;
+        newMsgSepCommitTimer[chName] = setTimeout(function () {
+          delete newMsgSepCommitTimer[chName];
+          delete newMsgSepLastSeen[chName];
+          if (commitTs > 0) setLastSeenTimestamp(chName, commitTs);
+        }, NEW_MSG_STICKY_MS);
+      } else {
+        // No new-messages separator. Behave like before: if user is parked at
+        // the bottom (or this is the first render), keep them at the bottom.
+        if (wasAtBottom && maxTimestamp > 0 && !isFirstVisit) {
+          setLastSeenTimestamp(chName, maxTimestamp);
+        }
+        if (isFirstRender || wasAtBottom) {
+          el.scrollTop = el.scrollHeight;
+          document.getElementById('scrollDownBtn').classList.remove('visible');
+        } else {
+          // User had scrolled up and is reading older messages — restore
+          // their position so an in-place re-render doesn't yank them to
+          // the top (innerHTML resets scrollTop to 0 by default).
+          el.scrollTop = prevScrollTop;
+        }
       }
     }
 
