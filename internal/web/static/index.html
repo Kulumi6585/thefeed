@@ -3,7 +3,10 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#17212b">
+  <meta name="theme-color" content="#17212b" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <title>thefeed</title>
   <style>
     @font-face {
@@ -61,9 +64,19 @@
       font-family: 'Vazirmatn', system-ui, -apple-system, sans-serif;
       background: var(--bg2);
       color: var(--text);
+      /* On mobile browsers, 100vh includes hidden space behind URL/nav bars,
+         which makes the bottom of the app inaccessible. Use 100dvh (dynamic
+         viewport height) so the app sizes itself to the visible viewport.
+         Fallback to 100vh on older browsers. */
       height: 100vh;
+      height: 100dvh;
       overflow: hidden;
-      font-size: var(--font-size)
+      font-size: var(--font-size);
+      /* Account for iOS notch and Android gesture bars. */
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right)
     }
 
     button {
@@ -80,7 +93,7 @@
     /* ===== LAYOUT ===== */
     .app {
       display: flex;
-      height: 100vh;
+      height: 100%;
       direction: ltr
     }
 
@@ -1045,6 +1058,7 @@
       width: 440px;
       max-width: 95vw;
       max-height: 90vh;
+      max-height: 90dvh;
       overflow-y: auto;
       direction: rtl
     }
@@ -1503,9 +1517,12 @@
     .header-kebab-menu button:hover { background: var(--hover) }
 
     @media(max-width:768px) {
+      /* On mobile, the body's safe-area padding covers iOS notch/home bar.
+         Inside, the app fills the remaining space. */
       .app {
         position: relative;
-        overflow: hidden
+        overflow: hidden;
+        height: 100%
       }
 
       .sidebar {
@@ -1551,6 +1568,13 @@
         max-width: 90%
       }
 
+      /* Modals on mobile become bottom sheets — make sure they reach the
+         visible bottom edge and aren't hidden behind the browser nav bar
+         or iOS home indicator. */
+      .modal-overlay {
+        height: 100dvh
+      }
+
       .modal {
         width: 100%;
         max-width: 100%;
@@ -1560,12 +1584,26 @@
         border-right: none;
         border-bottom: none;
         margin-top: auto;
-        align-self: flex-end
+        align-self: flex-end;
+        padding-bottom: max(20px, calc(20px + env(safe-area-inset-bottom)))
       }
 
       .modal-overlay.active {
         align-items: flex-end
       }
+
+      /* Add a little breathing room at the very bottom of the messages list
+         and send panel on mobile so the last message / input isn't crammed
+         against the browser nav bar (when safe-area-inset is 0). */
+      .messages {
+        padding-bottom: max(10px, env(safe-area-inset-bottom))
+      }
+    }
+
+    /* When the on-screen keyboard or browser nav bars pop up on mobile, the
+       visual viewport may shrink. Force the app shell to follow it. */
+    @supports (height: 100dvh) {
+      html, body { height: 100dvh }
     }
 
     ::-webkit-scrollbar {

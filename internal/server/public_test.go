@@ -248,7 +248,7 @@ func TestExtractMessageTextRejectsDataURL(t *testing.T) {
 
 func TestParsePublicMessagesUnsupportedMedia(t *testing.T) {
 	// Real Telegram HTML for polls/quizzes in public view: no poll widget,
-	// just a "message_media_not_supported" div.
+	// just a "message_media_not_supported" div, and no message body text.
 	body := []byte(`
 		<html><body>
 		<div class="tgme_widget_message" data-post="testchan/181">
@@ -275,5 +275,45 @@ func TestParsePublicMessagesUnsupportedMedia(t *testing.T) {
 	}
 	if msgs[0].Text != protocol.MediaPoll {
 		t.Fatalf("msgs[0].Text = %q, want %q", msgs[0].Text, protocol.MediaPoll)
+	}
+}
+
+// Regression test for https://t.me/networkti/239 — a normal text post that
+// also contains Telegram Premium custom emojis was being mis-tagged as a
+// [POLL] because Telegram's public web view emits a
+// "message_media_not_supported" element for premium emojis it can't render.
+// We must NOT prefix such messages with [POLL] when there is real body text.
+func TestParsePublicMessagesPremiumEmojiNotPoll(t *testing.T) {
+	body := []byte(`
+		<html><body>
+		<div class="tgme_widget_message" data-post="networkti/239">
+			<a class="tgme_widget_message_date"><time datetime="2026-04-20T10:00:00+00:00"></time></a>
+			<div class="tgme_widget_message_text">salam this is a normal post with premium emoji</div>
+			<div class="message_media_not_supported_wrap">
+				<div class="message_media_not_supported">
+					<div class="message_media_not_supported_label">Please open Telegram to view this post</div>
+					<a href="https://t.me/networkti/239" class="message_media_view_in_telegram">VIEW IN TELEGRAM</a>
+				</div>
+			</div>
+		</div>
+		</body></html>
+	`)
+
+	msgs, err := parsePublicMessages(body)
+	if err != nil {
+		t.Fatalf("parsePublicMessages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("len(msgs) = %d, want 1", len(msgs))
+	}
+	if msgs[0].ID != 239 {
+		t.Fatalf("msgs[0].ID = %d, want 239", msgs[0].ID)
+	}
+	if strings.Contains(msgs[0].Text, protocol.MediaPoll) {
+		t.Fatalf("premium-emoji message tagged as poll: %q", msgs[0].Text)
+	}
+	want := "salam this is a normal post with premium emoji"
+	if msgs[0].Text != want {
+		t.Fatalf("msgs[0].Text = %q, want %q", msgs[0].Text, want)
 	}
 }

@@ -266,9 +266,14 @@ func parsePublicMessages(body []byte) ([]protocol.Message, error) {
 			mediaPrefix = protocol.MediaFile
 		case findFirstByClass(n, "message_media_not_supported") != nil:
 			// Telegram shows "Please open Telegram to view this post" for
-			// unsupported content like polls, quizzes, etc. Tag it so
-			// the message is not silently dropped.
-			mediaPrefix = protocol.MediaPoll
+			// content the public web view can't render: polls/quizzes, but
+			// also for messages that contain Telegram Premium custom emoji.
+			// Only tag a message as a poll when it has no other text body —
+			// otherwise we'd false-positive normal posts (e.g. @networkti)
+			// that happen to use premium emojis. See bug: #239.
+			if text == "" {
+				mediaPrefix = protocol.MediaPoll
+			}
 		}
 		if mediaPrefix != "" {
 			if text != "" {
