@@ -8,6 +8,9 @@
   <meta name="theme-color" content="#17212b" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <title>thefeed</title>
+  <script>
+    if (typeof Android !== 'undefined') document.documentElement.classList.add('is-android-app');
+  </script>
   <style>
     @font-face {
       font-family: 'Vazirmatn';
@@ -34,6 +37,18 @@
       --msg-in: #182533;
       --hover: #1e2c3a;
       --font-size: 14px;
+      --safe-top: env(safe-area-inset-top);
+      --safe-right: env(safe-area-inset-right);
+      --safe-bottom: env(safe-area-inset-bottom);
+      --safe-left: env(safe-area-inset-left);
+    }
+    /* Android WebView lays the page out below the system bars and reports
+       phantom safe-area insets — zero them out so we don't double-pad. */
+    html.is-android-app {
+      --safe-top: 0px;
+      --safe-right: 0px;
+      --safe-bottom: 0px;
+      --safe-left: 0px;
     }
 
     :root[data-theme="light"] {
@@ -64,19 +79,14 @@
       font-family: 'Vazirmatn', system-ui, -apple-system, sans-serif;
       background: var(--bg2);
       color: var(--text);
-      /* On mobile browsers, 100vh includes hidden space behind URL/nav bars,
-         which makes the bottom of the app inaccessible. Use 100dvh (dynamic
-         viewport height) so the app sizes itself to the visible viewport.
-         Fallback to 100vh on older browsers. */
       height: 100vh;
       height: 100dvh;
       overflow: hidden;
       font-size: var(--font-size);
-      /* Account for iOS notch and Android gesture bars. */
-      padding-top: env(safe-area-inset-top);
-      padding-bottom: env(safe-area-inset-bottom);
-      padding-left: env(safe-area-inset-left);
-      padding-right: env(safe-area-inset-right)
+      padding-top: var(--safe-top);
+      padding-bottom: var(--safe-bottom);
+      padding-left: var(--safe-left);
+      padding-right: var(--safe-right)
     }
 
     button {
@@ -355,6 +365,44 @@
       color: rgba(255,255,255,.75)
     }
 
+    /* Auto-update toggle on each channel row. */
+    .ch-autoupdate {
+      flex: 0 0 auto;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-dim);
+      font-size: 20px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0;
+      transition: background .15s, color .15s, border-color .15s;
+      opacity: .55;
+    }
+    .ch-item:hover .ch-autoupdate {
+      opacity: 1;
+    }
+    .ch-autoupdate.on {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+      opacity: 1;
+    }
+    .ch-item.active .ch-autoupdate {
+      color: rgba(255, 255, 255, .9);
+      border-color: rgba(255, 255, 255, .35);
+    }
+    .ch-item.active .ch-autoupdate.on {
+      background: #fff;
+      color: var(--accent);
+      border-color: #fff;
+    }
+
     .ch-badge {
       background: #fff;
       color: var(--accent);
@@ -566,6 +614,18 @@
       border-bottom-left-radius: 4px
     }
 
+    /* Telegram-like: when a post carries a media card, the bubble shrinks
+       to track the media's width so the caption wraps to match. The media
+       fills the bubble's content area edge-to-edge (within padding). */
+    .msg.has-media {
+      max-width: min(95%, 402px)
+    }
+
+    .msg.has-media .media-card,
+    .msg.has-media .media-album {
+      max-width: 100%
+    }
+
     :root[data-theme="light"] .msg {
       border-color: var(--border)
     }
@@ -593,6 +653,388 @@
     .media-tag.reply-tag {
       background: rgba(192, 132, 252, .15);
       color: #c084fc
+    }
+
+    /* ===== DOWNLOADABLE MEDIA CARDS ===== */
+    .media-card {
+      margin-bottom: 6px;
+      border-radius: 10px;
+      overflow: hidden
+    }
+
+    .media-album {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 6px
+    }
+
+    .media-album .media-card {
+      margin-bottom: 0
+    }
+
+    .media-image {
+      background: var(--surface2);
+      max-width: 380px
+    }
+
+    .media-image-preview {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 120px
+    }
+
+    .media-image-loaded {
+      width: 100%;
+      max-height: 480px;
+      object-fit: contain;
+      display: block;
+      cursor: zoom-in
+    }
+
+    /* Action row that overlays the bottom of a loaded image card. Open,
+       Share, Save buttons live here. */
+    .media-image-actions {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      display: flex;
+      gap: 6px
+    }
+
+    .media-action-icon {
+      width: 32px;
+      height: 32px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, .55);
+      color: #fff;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .15s
+    }
+
+    .media-action-icon:hover {
+      background: rgba(0, 0, 0, .8)
+    }
+
+    /* In-progress state — replaces the action chip in the centre of the
+       image preview with a thicker, clearly-visible progress bar plus a
+       circular cancel button. */
+    .media-progress-overlay {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 6px;
+      width: 80%;
+      max-width: 280px;
+      padding: 12px 14px;
+      background: rgba(0, 0, 0, .6);
+      border-radius: 12px;
+      color: #fff;
+      position: relative
+    }
+
+    .media-progress-overlay .media-cancel-btn {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 24px;
+      height: 24px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, .15);
+      color: #fff;
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1
+    }
+
+    .media-progress-overlay .media-cancel-btn:hover {
+      background: rgba(255, 255, 255, .3)
+    }
+
+    .media-progress-overlay .media-progress-bar {
+      height: 6px;
+      background: rgba(255, 255, 255, .25);
+      overflow: hidden;
+      position: relative
+    }
+
+    .media-progress-overlay .media-progress-fill {
+      background: var(--accent);
+      transition: width .25s ease-out
+    }
+
+    /* Active-download indicator: a moving diagonal stripe pattern overlaid on
+       the bar. Always animates while .downloading is on the card, so the user
+       sees activity even before the first onprogress event arrives. */
+    .media-progress-overlay .media-progress-bar,
+    .media-card.downloading .media-progress-bar {
+      position: relative;
+      overflow: hidden;
+      background-image: linear-gradient(
+        45deg,
+        rgba(0, 0, 0, .12) 25%, transparent 25%,
+        transparent 50%, rgba(0, 0, 0, .12) 50%,
+        rgba(0, 0, 0, .12) 75%, transparent 75%, transparent
+      );
+      background-size: 16px 16px;
+      animation: media-prog-stripes 0.8s linear infinite;
+    }
+    .media-card.downloading .media-progress-bar-thin {
+      height: 8px;
+      margin-top: 6px;
+      border-radius: 4px;
+    }
+
+    @keyframes media-prog-stripes {
+      0%   { background-position: 0 0 }
+      100% { background-position: 16px 0 }
+    }
+
+    .media-file-actions {
+      display: flex;
+      gap: 6px;
+      align-items: center
+    }
+
+    .media-file-btn-cancel {
+      background: var(--error)
+    }
+
+    .media-file-btn-cancel:hover {
+      background: var(--error)
+    }
+
+    .media-action-queued {
+      background: rgba(0, 0, 0, .4)
+    }
+
+    .media-file-btn-queued {
+      background: var(--text-dim)
+    }
+
+    /* Full-screen lightbox for "Open image". Works the same in browsers and
+       Android WebView APKs since it never leaves the page. */
+    .media-lightbox {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: rgba(0, 0, 0, .92);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px
+    }
+
+    .media-lightbox-img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      user-select: none
+    }
+
+    .media-lightbox-close {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 40px;
+      height: 40px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, .15);
+      color: #fff;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center
+    }
+
+    .media-lightbox-close:hover {
+      background: rgba(255, 255, 255, .3)
+    }
+
+    .media-action {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      border-radius: 999px;
+      border: none;
+      background: rgba(0, 0, 0, .55);
+      color: #fff;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background .15s
+    }
+
+    .media-action:hover {
+      background: rgba(0, 0, 0, .75)
+    }
+
+    .media-action.media-loading {
+      background: var(--accent)
+    }
+
+    .media-action-disabled {
+      cursor: not-allowed;
+      opacity: .55
+    }
+
+    /* Non-downloadable variant: red ✕ inside the action chip. Clicking it
+       opens a small modal that explains why the file isn't available. */
+    .media-action-blocked {
+      background: rgba(229, 57, 53, .8)
+    }
+
+    .media-action-blocked:hover {
+      background: var(--error)
+    }
+
+    .media-icon-blocked {
+      font-weight: 700
+    }
+
+    .media-file-btn-blocked {
+      background: var(--error)
+    }
+
+    .media-file-btn-blocked:hover {
+      background: var(--error);
+      filter: brightness(.9)
+    }
+
+    .media-icon {
+      font-size: 16px;
+      line-height: 1
+    }
+
+    .media-meta {
+      font-size: 12px;
+      opacity: .92
+    }
+
+    .media-progress {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px
+    }
+
+    .media-progress-bar {
+      height: 4px;
+      background: rgba(255, 255, 255, .2);
+      border-radius: 2px;
+      overflow: hidden
+    }
+
+    .media-progress-bar-thin {
+      margin-top: 4px;
+      background: var(--border)
+    }
+
+    .media-progress-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      transition: width .3s ease-out
+    }
+
+    .media-progress-text {
+      font-size: 11px;
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .55)
+    }
+
+    /* File-style row */
+    .media-file {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      background: var(--surface2);
+      max-width: 380px
+    }
+
+    .media-file-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 600;
+      flex-shrink: 0
+    }
+
+    .media-file-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      direction: ltr
+    }
+
+    .media-file-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis
+    }
+
+    .media-file-size {
+      font-size: 11px;
+      color: var(--text-dim)
+    }
+
+    .media-file-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      text-decoration: none
+    }
+
+    .media-file-btn:hover {
+      background: var(--accent-hover)
+    }
+
+    .media-file-btn-disabled {
+      background: var(--border);
+      cursor: not-allowed
+    }
+
+    .media-file-btn-ready {
+      background: var(--success)
     }
 
     .reply-preview {
@@ -2105,6 +2547,16 @@
         scanning_resolvers: 'در حال بررسی ریزالور‌ها',
         server_fetch_wait: 'سرور در حال دریافت اطلاعات جدید از تلگرام',
         no_messages_hint: 'برنامه در حال دریافت پیام‌ها است. لطفاً چند لحظه صبر کنید...',
+        download: 'دانلود', media_too_large: 'حجم فایل بیش از حد مجاز سرور است', media_failed: 'دانلود ناموفق بود',
+        downloading: 'در حال دانلود...', media_open: 'باز کردن', media_save: 'ذخیره', media_share: 'اشتراک‌گذاری', close: 'بستن',
+        queued: 'در صف', media_hash_mismatch: 'هش محتوا با پیام مطابقت ندارد',
+        blocks_label: 'بلاک',
+        media_blocked_title: 'برای دانلود در دسترس نیست',
+        media_blocked_too_large: 'حجم این فایل ({size}) بیشتر از سقف کش سرور ({limit}) است.',
+        media_blocked_unavailable: 'سرور این فایل را کش نکرده است؛ احتمالاً از سقف {limit} بزرگ‌تر است یا دریافت آن ناموفق بوده.',
+        media_blocked_generic: 'سرور این فایل را برای دانلود ذخیره نکرده است.',
+        ok: 'باشه',
+        cancel_media_msg: 'دانلود این رسانه لغو شود؟', dismiss: 'بستن',
         write_message: 'پیام بنویسید...', configure_server: 'برای شروع یک سرور راه‌اندازی کنید',
         set_up: 'راه‌اندازی', switching: 'در حال تغییر پروفایل...',
         font_size: 'اندازه قلم', debug_mode: 'حالت دیباگ', language: 'زبان',
@@ -2136,6 +2588,9 @@
         msg_copied: 'پیام کپی شد!', rescan_started: 'بررسی مجدد شروع شد', no_new_messages: 'پیام جدیدی نیست',
         add_manual: '✎ ساخت دستی', rescan: 'بررسی مجدد',
         new_messages: 'پیام جدید', missed_messages: '{n} پیام از دست رفته یا حذف شده',
+        auto_update_toggle: 'به‌روزرسانی خودکار این کانال',
+        auto_update_on: 'به‌روزرسانی خودکار برای @{name} روشن شد',
+        auto_update_off: 'به‌روزرسانی خودکار برای @{name} خاموش شد',
         clear_cache: 'پاک کردن کش', clear_cache_btn: '🗑 پاک کردن کش', cache_cleared: 'کش پاک شد!',
         saved_resolvers_title: 'شروع سریع',
         saved_resolvers_msg: 'آخرین اسکن ({t}) نتیجه داد: {n} سرور DNS سالم پیدا شد. همین‌ها را استفاده کنیم یا دوباره اسکن کنیم؟',
@@ -2256,6 +2711,16 @@
         scanning_resolvers: 'Scanning resolvers',
         server_fetch_wait: 'Server fetching fresh data from Telegram',
         no_messages_hint: 'The app is trying to fetch messages. Please wait a moment...',
+        download: 'Download', media_too_large: 'Too large for server cache', media_failed: 'Download failed',
+        downloading: 'Downloading...', media_open: 'Open', media_save: 'Save', media_share: 'Share', close: 'Close',
+        queued: 'Queued', media_hash_mismatch: 'Content hash does not match the message',
+        blocks_label: 'blocks',
+        media_blocked_title: 'Not available for download',
+        media_blocked_too_large: 'This file ({size}) is larger than the server\'s cache limit ({limit}).',
+        media_blocked_unavailable: 'The server didn\'t cache this file. It may exceed the {limit} cache limit, or the upstream fetch failed.',
+        media_blocked_generic: 'The server didn\'t cache this file for download.',
+        ok: 'OK',
+        cancel_media_msg: 'Cancel this download?', dismiss: 'Dismiss',
         write_message: 'Write a message...', configure_server: 'Configure a server to start reading',
         set_up: 'Set Up', switching: 'Switching profile...',
         font_size: 'Font Size', debug_mode: 'Debug mode', language: 'Language',
@@ -2287,6 +2752,9 @@
         msg_copied: 'Message copied!', rescan_started: 'Rescan started', no_new_messages: 'No new messages',
         add_manual: '✎ Create Manually', rescan: 'Rescan',
         new_messages: 'New messages', missed_messages: '{n} messages missed or deleted',
+        auto_update_toggle: 'Auto-update this channel',
+        auto_update_on: 'Auto-update is now ON for @{name}',
+        auto_update_off: 'Auto-update is now OFF for @{name}',
         clear_cache: 'Clear Cache', clear_cache_btn: '🗑 Clear Cache', cache_cleared: 'Cache cleared!',
         saved_resolvers_title: 'Quick Start',
         saved_resolvers_msg: 'Last scan ({t}) found {n} healthy DNS servers. Use them now (no scan needed), or scan again to re-verify.',
@@ -2426,7 +2894,30 @@
 
     // ===== STATE =====
     var selectedChannel = 0, channels = [], eventSource = null, autoRefreshTimer = null, telegramLoggedIn = false, logVisible = false;
-    var serverNextFetch = 0, nextFetchInterval = null, previousMsgIDs = {}, currentMsgTexts = [];
+    // previousMsgIDs is kept for the "no_new_messages" toast on refresh.
+    // previousContentHashes drives the channel-list NEW badge — robust across
+    // both Telegram (monotonic IDs) and X accounts (CRC32-hashed snowflake
+    // IDs that aren't ordered). Both maps are persisted to localStorage so
+    // they survive page reload and the user keeps seeing badges.
+    var serverNextFetch = 0, nextFetchInterval = null, previousMsgIDs = loadSeenMap('thefeed_seen_ids'), previousContentHashes = loadSeenMap('thefeed_seen_hashes'), currentMsgTexts = [];
+    function loadSeenMap(storageKey) {
+      try {
+        var raw = localStorage.getItem(storageKey);
+        if (!raw) return {};
+        var parsed = JSON.parse(raw);
+        return (parsed && typeof parsed === 'object') ? parsed : {};
+      } catch (e) { return {}; }
+    }
+    function saveSeenMap(storageKey, m) {
+      try { localStorage.setItem(storageKey, JSON.stringify(m)); } catch (e) { }
+    }
+    function rememberSeen(name, lastID, contentHash) {
+      if (!name) return;
+      previousMsgIDs[name] = lastID || 0;
+      previousContentHashes[name] = contentHash || 0;
+      saveSeenMap('thefeed_seen_ids', previousMsgIDs);
+      saveSeenMap('thefeed_seen_hashes', previousContentHashes);
+    }
     var appVersion = '', latestVersion = '';
     var profiles = null, activeProfileId = '', editingProfileId = null, resolverScanHint = '', resolverScanHealthy = 0, resolverScanDone = 0, resolverScanTotal = 0;
     var currentMaxMsgID = 0;
@@ -2439,7 +2930,7 @@
     var NEW_MSG_STICKY_MS = 10000; // how long the "new messages" tag stays
     var newMsgSepLastSeen = {};    // ch name → lastSeenTs the current sep represents
     var newMsgSepCommitTimer = {}; // ch name → setTimeout handle for deferred commit
-    var refreshingChannels = {}; // tracks channels with an in-flight refresh
+    var refreshingChannels = {};
 
     // ===== MOBILE NAV =====
     var mobileQuery = window.matchMedia('(max-width: 768px)');
@@ -2619,6 +3110,19 @@
       });
     }
 
+    // showInfoDialog is the one-button cousin of showConfirmDialog: a small
+    // modal with a message and a single OK button. Used for explanatory
+    // bits like "this file is too large for the server cache".
+    function showInfoDialog(msg, okText) {
+      return new Promise(function (resolve) {
+        var overlay = document.createElement('div');
+        overlay.className = 'modal-overlay active';
+        overlay.innerHTML = '<div class="modal" style="max-width:380px"><p style="font-size:13px;color:var(--text);margin-bottom:16px;line-height:1.6;white-space:pre-line">' + esc(msg) + '</p><div class="modal-actions"><button class="btn btn-primary" id="infoOk">' + esc(okText || t('ok') || 'OK') + '</button></div></div>';
+        document.body.appendChild(overlay);
+        document.getElementById('infoOk').onclick = function () { document.body.removeChild(overlay); resolve(true) };
+      });
+    }
+
     // ===== SETTINGS =====
     function openSettings() {
       renderLatestVersion();
@@ -2757,7 +3261,23 @@
       }
     }
     async function clearCache() {
+      try { await mediaWipeIDB(); } catch (e) { }
+      // Drop in-memory blobs too so the next render forces a fresh fetch.
+      Object.keys(mediaBlobURLs).forEach(function (k) {
+        try { URL.revokeObjectURL(mediaBlobURLs[k]); } catch (e) { }
+      });
+      mediaBlobURLs = {};
+      mediaBlobs = {};
       try { var r = await fetch('/api/cache/clear', { method: 'POST' }); var j = await r.json(); if (j.ok) { alert(t('cache_cleared')) } } catch (e) { }
+    }
+
+    async function mediaWipeIDB() {
+      var db = await mediaDBOpen();
+      if (!db) return;
+      try {
+        var tx = db.transaction(MEDIA_DB_STORE, 'readwrite');
+        tx.objectStore(MEDIA_DB_STORE).clear();
+      } catch (e) { }
     }
 
     // ===== SAVED RESOLVERS PROMPT =====
@@ -3174,12 +3694,87 @@
     async function loadChannels() {
       try {
         var r = await fetch('/api/channels'); channels = await r.json(); if (!channels) channels = [];
+        // Initialise NEW-badge baseline for any channel we've never seen
+        // before. Without this the badge can never fire on a channel the
+        // user hasn't manually opened yet (since channelHasNew suppresses
+        // when no baseline exists).
+        var baselineDirty = false;
+        for (var ci = 0; ci < channels.length; ci++) {
+          var ch0 = channels[ci];
+          var n0 = ch0.Name || ch0.name || '';
+          if (!n0) continue;
+          if (previousContentHashes[n0] === undefined) {
+            previousContentHashes[n0] = ch0.ContentHash || ch0.contentHash || 0;
+            baselineDirty = true;
+          }
+          if (!(n0 in previousMsgIDs)) {
+            previousMsgIDs[n0] = ch0.LastMsgID || ch0.lastMsgID || 0;
+            baselineDirty = true;
+          }
+        }
+        if (baselineDirty) {
+          saveSeenMap('thefeed_seen_ids', previousMsgIDs);
+          saveSeenMap('thefeed_seen_hashes', previousContentHashes);
+        }
+        await loadAutoUpdate();
         renderChannels(); updateSendPanel();
         var initBar = document.getElementById('prog-init'); if (initBar) initBar.remove();
         var sr = await fetch('/api/status'); var st = await sr.json();
         telegramLoggedIn = !!st.telegramLoggedIn;
         if (st.nextFetch) { serverNextFetch = st.nextFetch; updateNextFetchDisplay() }
         if (st.latestVersion) { latestVersion = st.latestVersion; renderLatestVersion() }
+      } catch (e) { }
+    }
+
+    // UI cache of the active profile's auto-update list (server is source of truth).
+    var autoUpdateChannels = new Set();
+    async function loadAutoUpdate() {
+      try {
+        var r = await fetch('/api/auto-update');
+        if (!r.ok) return;
+        var d = await r.json();
+        autoUpdateChannels = new Set();
+        if (Array.isArray(d.channels)) {
+          for (var i = 0; i < d.channels.length; i++) {
+            var n = String(d.channels[i] || '').replace(/^@/, '').trim();
+            if (n) autoUpdateChannels.add(n);
+          }
+        }
+      } catch (e) { }
+    }
+    async function toggleAutoUpdate(name, ev) {
+      if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+      var clean = String(name || '').replace(/^@/, '').trim();
+      if (!clean) return;
+      // Optimistic flip; rollback if the server rejects.
+      if (autoUpdateChannels.has(clean)) autoUpdateChannels.delete(clean);
+      else autoUpdateChannels.add(clean);
+      renderChannels();
+      try {
+        var r = await fetch('/api/auto-update/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: clean })
+        });
+        if (!r.ok) {
+          if (autoUpdateChannels.has(clean)) autoUpdateChannels.delete(clean);
+          else autoUpdateChannels.add(clean);
+          renderChannels();
+          return;
+        }
+        var d = await r.json();
+        autoUpdateChannels = new Set();
+        if (Array.isArray(d.channels)) {
+          for (var i = 0; i < d.channels.length; i++) {
+            var n = String(d.channels[i] || '').replace(/^@/, '').trim();
+            if (n) autoUpdateChannels.add(n);
+          }
+        }
+        renderChannels();
+        var template = d.enabled
+          ? (t('auto_update_on') || 'Auto-update is now ON for @{name}')
+          : (t('auto_update_off') || 'Auto-update is now OFF for @{name}');
+        showToast(template.replace('{name}', d.channel || clean), 5000);
       } catch (e) { }
     }
 
@@ -3209,11 +3804,15 @@
           for (var ui = 0; ui < channels.length; ui++) {
             var num = ui + 1;
             existingItems[ui].classList.toggle('active', num === selectedChannel);
-            var lastID = channels[ui].LastMsgID || channels[ui].lastMsgID || 0;
             var chNm = channels[ui].Name || channels[ui].name || '';
-            var showBadge = previousMsgIDs[chNm] > 0 && lastID > previousMsgIDs[chNm] && num !== selectedChannel;
+            var showBadge = channelHasNew(channels[ui]) && num !== selectedChannel;
             var previewEl = existingItems[ui].querySelector('.ch-preview');
             if (previewEl) previewEl.innerHTML = showBadge ? '<span class="ch-badge">NEW</span>' : '';
+            var autoBtn = existingItems[ui].querySelector('.ch-autoupdate');
+            if (autoBtn) {
+              var key = chNm.replace(/^@/, '').trim();
+              autoBtn.classList.toggle('on', autoUpdateChannels.has(key));
+            }
           }
           _updateRefreshBadge(); return;
         }
@@ -3241,15 +3840,21 @@
           if (avatarName.charAt(0) === '@') avatarName = avatarName.substring(1);
           var avatarText = (avatarName || '?').charAt(0).toUpperCase();
           var active = num2 === selectedChannel ? ' active' : '';
-          var lastID = e.ch.LastMsgID || e.ch.lastMsgID || 0;
           var chNm2 = e.ch.Name || e.ch.name || '';
-          var badge = (previousMsgIDs[chNm2] > 0 && lastID > previousMsgIDs[chNm2] && num2 !== selectedChannel) ? '<span class="ch-badge">NEW</span>' : '';
+          var badge = (channelHasNew(e.ch) && num2 !== selectedChannel) ? '<span class="ch-badge">NEW</span>' : '';
           h += '<div class="ch-item' + active + '" data-name="' + escAttr(handle) + '" data-label="' + escAttr(label) + '" onclick="selectChannel(' + num2 + ')">';
           h += '<div class="ch-avatar">' + esc(avatarText) + '</div>';
           var chSubText = !isX ? (handle.charAt(0) === '@' ? handle : '@' + handle) : '';
           h += '<div class="ch-info"><div class="ch-name">' + formatIranTitleHtml(label) + (isPriv ? '<span class="ch-type-tag">' + t('private') + '</span>' : (isX ? '<span class="ch-type-tag x-tag">' + t('x_label') + '</span>' : '')) + '</div>';
           if (chSubText) h += '<div class="ch-sub">' + esc(chSubText) + '</div>';
-          h += '<div class="ch-preview">' + badge + '</div></div></div>';
+          h += '<div class="ch-preview">' + badge + '</div></div>';
+          var autoKey = handle.replace(/^@/, '').trim();
+          var autoOn = autoUpdateChannels.has(autoKey);
+          var autoTitle = esc(t('auto_update_toggle') || 'Auto-update this channel');
+          h += '<button type="button" class="ch-autoupdate' + (autoOn ? ' on' : '') + '"'
+            + ' title="' + autoTitle + '" aria-label="' + autoTitle + '"'
+            + ' onclick="toggleAutoUpdate(\'' + escAttr(autoKey) + '\', event)">&#x23F1;</button>';
+          h += '</div>';
         }
         return h;
       }
@@ -3259,10 +3864,27 @@
     function _updateRefreshBadge() {
       var hasNew = false;
       for (var k = 0; k < channels.length; k++) {
-        var num3 = k + 1, chNm3 = channels[k].Name || channels[k].name || '', lid = channels[k].LastMsgID || channels[k].lastMsgID || 0;
-        if (previousMsgIDs[chNm3] > 0 && lid > previousMsgIDs[chNm3] && num3 !== selectedChannel) { hasNew = true; break }
+        if (k + 1 === selectedChannel) continue;
+        if (channelHasNew(channels[k])) { hasNew = true; break }
       }
       document.getElementById('refreshBtn').classList.toggle('refresh-has-new', hasNew);
+    }
+
+    // channelHasNew returns true when the channel's content has changed
+    // since the user last visited it.
+    function channelHasNew(ch) {
+      if (!ch) return false;
+      var name = ch.Name || ch.name || '';
+      if (!name) return false;
+      var hash = ch.ContentHash || ch.contentHash || 0;
+      var lastID = ch.LastMsgID || ch.lastMsgID || 0;
+      var ct = ch.ChatType || ch.chatType || 0;
+      var seenHash = previousContentHashes[name];
+      var seenID = previousMsgIDs[name] || 0;
+      if (seenHash === undefined && seenID === 0) return false;
+      if (seenHash !== undefined && hash !== 0 && hash !== seenHash) return true;
+      if (ct !== 2 && seenID > 0 && lastID > seenID) return true;
+      return false;
     }
 
     async function selectChannel(num) {
@@ -3306,10 +3928,8 @@
       if (existing) return;
       var item = document.createElement('div'); item.id = id; item.className = 'progress-item';
       item.dataset.lastUpdate = Date.now();
-      item.innerHTML = '<button class="progress-close" onclick="this.parentNode.remove()" title="Dismiss">&times;</button><div class="progress-label">' + t('fetching_channel') + ' ' + (name || num) + '</div><div class="progress-bar"><div class="progress-fill" style="width:40%;animation:prog-pulse 1.5s ease-in-out infinite"></div></div>';
+      item.innerHTML = '<button class="progress-close" onclick="this.parentNode.remove()" title="' + esc(t('dismiss') || 'Dismiss') + '">&times;</button><div class="progress-label">' + t('fetching_channel') + ' ' + (name || num) + '</div><div class="progress-bar"><div class="progress-fill" style="width:40%;animation:prog-pulse 1.5s ease-in-out infinite"></div></div>';
       panel.insertBefore(item, panel.firstChild);
-      // Safety auto-remove: metadata fetch typically completes within ~5 s;
-      // the real block-progress bar replaces this one as soon as blocks arrive.
       setTimeout(function () { var el = document.getElementById(id); if (el) el.remove() }, 15000);
     }
 
@@ -3327,11 +3947,18 @@
         var r = await fetch('/api/messages/' + chNum); if (chNum !== selectedChannel) return;
         var data = await r.json(); if (chNum !== selectedChannel) return;
         renderMessages(data.messages || [], data.gaps || []);
-        // Remove fetch progress bar only if no refresh is in flight for this channel
         if (!refreshingChannels[chNum]) {
           var fetchBar = document.getElementById('prog-fetch-ch-' + chNum); if (fetchBar) fetchBar.remove();
         }
-        if (channels[chNum - 1]) { var cn = channels[chNum - 1].Name || channels[chNum - 1].name || ''; previousMsgIDs[cn] = channels[chNum - 1].LastMsgID || channels[chNum - 1].lastMsgID || 0; renderChannels() }
+        if (channels[chNum - 1]) {
+          var cn = channels[chNum - 1].Name || channels[chNum - 1].name || '';
+          rememberSeen(
+            cn,
+            channels[chNum - 1].LastMsgID || channels[chNum - 1].lastMsgID || 0,
+            channels[chNum - 1].ContentHash || channels[chNum - 1].contentHash || 0
+          );
+          renderChannels();
+        }
       } catch (e) { }
     }
 
@@ -3355,6 +3982,779 @@
       if (!hasContent) html += '<div class="poll-question" style="opacity:.5">' + t('poll_placeholder') + '</div>';
       html += '</div>';
       return html;
+    }
+
+    // ===== DOWNLOADABLE MEDIA =====
+    var mediaInflight = {};
+    var mediaBlobURLs = {};
+    var mediaBlobs = {};
+
+    var MEDIA_MAX_CONCURRENT = 1;
+    var mediaActiveCount = 0;
+    var mediaQueue = []; // [{ domID, run }]
+    var mediaQueued = {}; // domID → true
+
+    // Content-addressed: keyed by "<size>-<crc>" so identical bytes share a
+    // single cache entry across messages, channels, and server reboots
+    // (the dynamic media-channel number isn't part of the key).
+    var MEDIA_DB_NAME = 'thefeed-media';
+    var MEDIA_DB_VERSION = 2;
+    var MEDIA_DB_STORE = 'blobs';
+    var MEDIA_DB_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+    var mediaDBPromise = null;
+
+    var _crc32Table = (function () {
+      var t = new Uint32Array(256);
+      for (var n = 0; n < 256; n++) {
+        var c = n;
+        for (var k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+        t[n] = c >>> 0;
+      }
+      return t;
+    })();
+    function crc32IEEE(uint8Array) {
+      var c = 0xffffffff;
+      for (var i = 0; i < uint8Array.length; i++) {
+        c = (_crc32Table[(c ^ uint8Array[i]) & 0xff] ^ (c >>> 8)) >>> 0;
+      }
+      return ((c ^ 0xffffffff) >>> 0);
+    }
+    async function blobCRC32(blob) {
+      var buf = await blob.arrayBuffer();
+      return crc32IEEE(new Uint8Array(buf));
+    }
+
+    function mediaDBOpen() {
+      if (mediaDBPromise) return mediaDBPromise;
+      if (!window.indexedDB) return Promise.resolve(null);
+      mediaDBPromise = new Promise(function (resolve) {
+        var req = indexedDB.open(MEDIA_DB_NAME, MEDIA_DB_VERSION);
+        req.onupgradeneeded = function () {
+          var db = req.result;
+          // Drop the previous keyspace (channel-keyed entries from v1) so we
+          // don't leak orphaned bytes that the new content-addressed lookup
+          // can't find.
+          if (db.objectStoreNames.contains(MEDIA_DB_STORE)) {
+            db.deleteObjectStore(MEDIA_DB_STORE);
+          }
+          db.createObjectStore(MEDIA_DB_STORE);
+        };
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { resolve(null); };
+      });
+      return mediaDBPromise;
+    }
+
+    function mediaCacheKey(size, crc) { return size + '-' + crc; }
+
+    async function mediaForgetCache(card) {
+      try {
+        var size = card.getAttribute('data-size');
+        var crc = card.getAttribute('data-crc');
+        if (!size || !crc) return;
+        var db = await mediaDBOpen();
+        if (!db) return;
+        var tx = db.transaction(MEDIA_DB_STORE, 'readwrite');
+        tx.objectStore(MEDIA_DB_STORE)['delete'](mediaCacheKey(size, crc));
+      } catch (e) { }
+    }
+
+    async function mediaPersistBlob(msgID, card, blob, mime) {
+      try {
+        var db = await mediaDBOpen();
+        if (!db) return;
+        var size = card.getAttribute('data-size');
+        var crc = card.getAttribute('data-crc');
+        if (!size || !crc) return;
+        var tx = db.transaction(MEDIA_DB_STORE, 'readwrite');
+        tx.objectStore(MEDIA_DB_STORE).put({
+          blob: blob,
+          mime: mime || '',
+          savedAt: Date.now()
+        }, mediaCacheKey(size, crc));
+      } catch (e) { }
+    }
+
+    async function mediaRestoreFromCache(msgID) {
+      var card = document.getElementById('media-' + msgID);
+      if (!card) return false;
+      var size = card.getAttribute('data-size');
+      var crc = card.getAttribute('data-crc');
+      if (!size || !crc) return false;
+      var db = await mediaDBOpen();
+      if (!db) return false;
+      try {
+        var key = mediaCacheKey(size, crc);
+        var tx = db.transaction(MEDIA_DB_STORE, 'readonly');
+        var store = tx.objectStore(MEDIA_DB_STORE);
+        var rec = await new Promise(function (resolve) {
+          var req = store.get(key);
+          req.onsuccess = function () { resolve(req.result); };
+          req.onerror = function () { resolve(null); };
+        });
+        if (!rec) return false;
+        if (rec.savedAt && Date.now() - rec.savedAt > MEDIA_DB_MAX_AGE_MS) {
+          try {
+            var d2 = db.transaction(MEDIA_DB_STORE, 'readwrite');
+            d2.objectStore(MEDIA_DB_STORE)['delete'](key);
+          } catch (e) { }
+          return false;
+        }
+        var blobURL = URL.createObjectURL(rec.blob);
+        mediaBlobURLs[msgID] = blobURL;
+        mediaBlobs[msgID] = { blob: rec.blob, url: blobURL, mime: rec.mime || '' };
+        mediaShowBlob(card, blobURL);
+        return true;
+      } catch (e) { return false; }
+    }
+
+    function mediaTryRestoreVisibleCards() {
+      var cards = document.querySelectorAll('.media-card');
+      for (var i = 0; i < cards.length; i++) {
+        var card = cards[i];
+        var msgID = card.getAttribute('data-msg');
+        if (!msgID) continue;
+        var ch = parseInt(card.getAttribute('data-ch'), 10);
+        if (!ch || ch < 10000 || ch > 60000) continue;
+        var entry = mediaBlobs[msgID];
+        if (entry) {
+          mediaShowBlob(card, entry.url);
+          continue;
+        }
+        // A download from before the re-render is still running; rebuild the
+        // progress overlay so the user keeps seeing the bar instead of an
+        // already-clicked-but-now-empty action chip.
+        if (mediaInflight[msgID]) {
+          mediaShowProgress(card);
+          continue;
+        }
+        if (mediaQueued[card.id]) {
+          mediaShowQueued(card);
+          continue;
+        }
+        mediaRestoreFromCache(msgID);
+      }
+    }
+
+    function parseDownloadableMedia(text, tag) {
+      var rest = text.substring(tag.length);
+      var nl = rest.indexOf('\n');
+      var head = nl >= 0 ? rest.substring(0, nl) : rest;
+      var caption = nl >= 0 ? rest.substring(nl + 1) : '';
+      head = head.trim();
+      if (!head) {
+        return { downloadable: false, size: 0, channel: 0, blocks: 0, crc: '', caption: caption };
+      }
+      var parts = head.split(':');
+      if (parts.length < 5) {
+        return { downloadable: false, size: 0, channel: 0, blocks: 0, crc: '', caption: rest.replace(/^\n/, '') };
+      }
+      var size = parseInt(parts[0], 10);
+      var dl = parseInt(parts[1], 10);
+      var ch = parseInt(parts[2], 10);
+      var blk = parseInt(parts[3], 10);
+      var crc = parts[4].toLowerCase();
+      if (isNaN(size) || isNaN(dl) || isNaN(ch) || isNaN(blk) || !/^[0-9a-f]+$/.test(crc)) {
+        return { downloadable: false, size: 0, channel: 0, blocks: 0, crc: '', filename: '', caption: rest.replace(/^\n/, '') };
+      }
+      var filename = parts.length >= 6 ? parts.slice(5).join(':') : '';
+      return {
+        downloadable: dl === 1 && ch >= 10000 && ch <= 60000 && blk > 0,
+        size: size,
+        channel: ch,
+        blocks: blk,
+        crc: crc,
+        filename: filename,
+        caption: caption
+      };
+    }
+
+    function formatBytes(n) {
+      if (!n || n < 0) return '0 B';
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+      return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+    }
+
+    function mediaTagLabel(tag) {
+      return tag.replace(/^\[|\]$/g, '');
+    }
+
+    function mediaIsImageTag(tag) {
+      return tag === '[IMAGE]' || tag === '[STICKER]' || tag === '[GIF]';
+    }
+
+    function mediaExtForTag(tag, mime) {
+      if (mime) {
+        if (/^image\/(jpeg|jpg)$/i.test(mime)) return 'jpg';
+        if (/^image\/png$/i.test(mime)) return 'png';
+        if (/^image\/webp$/i.test(mime)) return 'webp';
+        if (/^image\/gif$/i.test(mime)) return 'gif';
+        if (/^video\/mp4$/i.test(mime)) return 'mp4';
+        if (/^audio\/(mpeg|mp3)$/i.test(mime)) return 'mp3';
+        if (/^audio\/ogg$/i.test(mime)) return 'ogg';
+        if (/^application\/pdf$/i.test(mime)) return 'pdf';
+      }
+      switch (tag) {
+        case '[IMAGE]': return 'jpg';
+        case '[STICKER]': return 'webp';
+        case '[GIF]': return 'gif';
+        case '[VIDEO]': return 'mp4';
+        case '[AUDIO]': return 'mp3';
+      }
+      return 'bin';
+    }
+
+    function mediaSummaryLine(tag, parsed) {
+      var label = mediaTagLabel(tag);
+      var parts = [label];
+      if (parsed.size > 0) parts.push(formatBytes(parsed.size));
+      if (parsed.blocks > 0) parts.push(parsed.blocks + ' ' + (t('blocks_label') || 'blocks'));
+      return parts.join(' · ');
+    }
+
+    function renderDownloadableMedia(tag, parsed, msgID) {
+      var label = mediaTagLabel(tag);
+      var summary = mediaSummaryLine(tag, parsed);
+      var sizeStr = parsed.size > 0 ? formatBytes(parsed.size) : '?';
+      var canDownload = parsed.downloadable;
+      var domID = 'media-' + msgID;
+      var dataAttrs = 'id="' + domID + '" data-tag="' + escAttr(tag)
+        + '" data-ch="' + parsed.channel + '" data-blk="' + parsed.blocks
+        + '" data-size="' + parsed.size + '" data-crc="' + parsed.crc
+        + '" data-fname="' + escAttr(parsed.filename || '') + '" data-msg="' + msgID + '"';
+
+      if (mediaIsImageTag(tag)) {
+        var imageInner;
+        if (canDownload) {
+          imageInner = '<button class="media-action" onclick="mediaStart(\'' + domID + '\')" type="button" title="' + esc(t('download') || 'Download') + '">'
+            + '<span class="media-icon">&#11015;</span>'
+            + '<span class="media-meta" dir="ltr">' + esc(summary) + '</span>'
+            + '</button>';
+        } else {
+          imageInner = '<button class="media-action media-action-blocked" type="button" onclick="mediaShowBlockedReason(\'' + domID + '\')" title="' + esc(t('media_blocked_title') || 'Not available for download') + '">'
+            + '<span class="media-icon media-icon-blocked">&#10005;</span>'
+            + '<span class="media-meta" dir="ltr">' + esc(summary) + '</span>'
+            + '</button>';
+        }
+        return '<div class="media-card media-image" ' + dataAttrs + '>'
+          + '<div class="media-image-preview" id="' + domID + '-preview">'
+          + imageInner
+          + '</div>'
+          + '</div>';
+      }
+
+      // File-style row: tag chip + filename(label) + size + action button
+      var btnHTML = canDownload
+        ? '<button class="media-file-btn" onclick="mediaStart(\'' + domID + '\')" type="button" title="' + esc(t('download') || 'Download') + '">&#11015;</button>'
+        : '<button class="media-file-btn media-file-btn-blocked" onclick="mediaShowBlockedReason(\'' + domID + '\')" type="button" title="' + esc(t('media_blocked_title') || 'Not available for download') + '">&#10005;</button>';
+      var detail = (parsed.size > 0 ? formatBytes(parsed.size) : '?')
+        + (parsed.blocks > 0 ? ' &middot; ' + parsed.blocks + ' ' + (t('blocks_label') || 'blocks') : '');
+      var displayName = parsed.filename || label;
+      return '<div class="media-card media-file" ' + dataAttrs + '>'
+        + '<div class="media-file-icon">' + label.charAt(0) + '</div>'
+        + '<div class="media-file-info">'
+        + '<div class="media-file-name" dir="ltr">' + esc(displayName) + '</div>'
+        + '<div class="media-file-size" id="' + domID + '-text" dir="ltr">' + detail + '</div>'
+        + '<div class="media-progress-bar media-progress-bar-thin"><div class="media-progress-fill" id="' + domID + '-fill" style="width:0%"></div></div>'
+        + '</div>'
+        + '<div class="media-file-actions" id="' + domID + '-actions">' + btnHTML + '</div>'
+        + '</div>';
+    }
+
+    function mediaShowBlockedReason(domID) {
+      var card = document.getElementById(domID);
+      if (!card) return;
+      var size = parseInt(card.getAttribute('data-size'), 10) || 0;
+      var maxSize = (window._serverMediaMaxBytes || 0);
+      var msg;
+      if (maxSize > 0 && size > maxSize) {
+        msg = (t('media_blocked_too_large') || 'This file is larger than the server\'s configured cache limit ({size} > {limit}).')
+          .replace('{size}', formatBytes(size))
+          .replace('{limit}', formatBytes(maxSize));
+      } else if (maxSize > 0) {
+        msg = (t('media_blocked_unavailable') || 'The server didn\'t cache this file. It may exceed the {limit} cache limit, or the upstream fetch failed.')
+          .replace('{limit}', formatBytes(maxSize));
+      } else {
+        msg = t('media_blocked_generic') || 'The server didn\'t cache this file.';
+      }
+      showInfoDialog(msg);
+    }
+
+    async function mediaStart(domID) {
+      var card = document.getElementById(domID);
+      if (!card) return;
+      var msgID = card.getAttribute('data-msg');
+      if (mediaBlobURLs[msgID]) {
+        mediaShowBlob(card, mediaBlobURLs[msgID]);
+        return;
+      }
+      if (mediaInflight[msgID]) {
+        var ok = await showConfirmDialog(t('cancel_media_msg') || 'Cancel this download?', t('yes') || 'Yes', t('no') || 'No');
+        if (!ok) return;
+        if (!mediaInflight[msgID]) return;
+        try { mediaInflight[msgID].xhr.abort(); } catch (e) { }
+        delete mediaInflight[msgID];
+        mediaResetCard(card);
+        return;
+      }
+      if (mediaQueued[domID]) {
+        var ok2 = await showConfirmDialog(t('cancel_media_msg') || 'Cancel this download?', t('yes') || 'Yes', t('no') || 'No');
+        if (!ok2) return;
+        mediaDequeue(domID);
+        mediaResetCard(card);
+        return;
+      }
+      if (mediaActiveCount >= MEDIA_MAX_CONCURRENT) {
+        mediaQueued[domID] = true;
+        mediaQueue.push({ domID: domID, run: function () { mediaRunDownload(domID); } });
+        mediaShowQueued(card);
+        return;
+      }
+      mediaRunDownload(domID);
+    }
+
+    function mediaDequeue(domID) {
+      delete mediaQueued[domID];
+      for (var i = 0; i < mediaQueue.length; i++) {
+        if (mediaQueue[i].domID === domID) {
+          mediaQueue.splice(i, 1);
+          return;
+        }
+      }
+    }
+
+    function mediaPumpQueue() {
+      while (mediaActiveCount < MEDIA_MAX_CONCURRENT && mediaQueue.length > 0) {
+        var next = mediaQueue.shift();
+        delete mediaQueued[next.domID];
+        next.run();
+      }
+    }
+
+    function mediaShowQueued(card) {
+      var domID = card.id;
+      var label = t('queued') || 'Queued';
+      if (mediaIsImageTag(card.getAttribute('data-tag'))) {
+        var preview = document.getElementById(domID + '-preview');
+        if (preview) {
+          preview.innerHTML = '<button class="media-action media-action-queued" type="button" onclick="mediaStart(\'' + domID + '\')" title="' + esc(t('cancel') || 'Cancel') + '">'
+            + '<span class="media-icon">&#9203;</span>'
+            + '<span class="media-meta" dir="ltr">' + esc(label) + '</span>'
+            + '</button>';
+        }
+      } else {
+        var actions = document.getElementById(domID + '-actions');
+        if (actions) actions.innerHTML = '<button class="media-file-btn media-file-btn-queued" onclick="mediaStart(\'' + domID + '\')" type="button" title="' + esc(label) + '">&#9203;</button>';
+      }
+    }
+
+    function mediaRunDownload(domID) {
+      var card = document.getElementById(domID);
+      if (!card) { mediaPumpQueue(); return; }
+      var msgID = card.getAttribute('data-msg');
+      var ch = card.getAttribute('data-ch');
+      var blk = card.getAttribute('data-blk');
+      var size = card.getAttribute('data-size');
+      var crc = card.getAttribute('data-crc');
+      var fname = card.getAttribute('data-fname') || '';
+      var url = '/api/media/get?ch=' + encodeURIComponent(ch)
+        + '&blk=' + encodeURIComponent(blk)
+        + '&size=' + encodeURIComponent(size)
+        + '&crc=' + encodeURIComponent(crc)
+        + (fname ? '&name=' + encodeURIComponent(fname) : '');
+      mediaActiveCount++;
+      var xhr = new XMLHttpRequest();
+      xhr.responseType = 'blob';
+      xhr.open('GET', url);
+      xhr.onprogress = function (ev) {
+        var total = ev.total || parseInt(size, 10) || 0;
+        var loaded = ev.loaded || 0;
+        mediaUpdateProgress(card, loaded, total);
+      };
+      var progressShownAt = 0;
+      var MIN_PROGRESS_VISIBLE_MS = 350;
+      async function deliverBlob() {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          var expectedCRC = parseInt(crc, 16);
+          if (!isNaN(expectedCRC) && expectedCRC > 0) {
+            try {
+              var got = await blobCRC32(xhr.response);
+              if (got !== expectedCRC) {
+                await mediaForgetCache(card);
+                mediaShowError(card, t('media_hash_mismatch') || 'Content hash mismatch');
+                return;
+              }
+            } catch (e) { }
+          }
+          var blobURL = URL.createObjectURL(xhr.response);
+          mediaBlobURLs[msgID] = blobURL;
+          mediaBlobs[msgID] = { blob: xhr.response, url: blobURL, mime: xhr.getResponseHeader('Content-Type') || '' };
+          mediaShowBlob(card, blobURL);
+          mediaPersistBlob(msgID, card, xhr.response, mediaBlobs[msgID].mime);
+        } else {
+          mediaShowError(card, xhr.statusText || ('HTTP ' + xhr.status));
+        }
+      }
+      function finishSlot() {
+        mediaActiveCount = Math.max(0, mediaActiveCount - 1);
+        mediaPumpQueue();
+      }
+      xhr.onload = function () {
+        delete mediaInflight[msgID];
+        if (xhr.status >= 200 && xhr.status < 300) {
+          var totalSize = (xhr.response && xhr.response.size) ? xhr.response.size
+            : (parseInt(card.getAttribute('data-size'), 10) || 0);
+          if (totalSize > 0) mediaUpdateProgress(card, totalSize, totalSize);
+        }
+        var elapsed = Date.now() - progressShownAt;
+        if (progressShownAt > 0 && elapsed < MIN_PROGRESS_VISIBLE_MS) {
+          setTimeout(function () { deliverBlob().finally(finishSlot); }, MIN_PROGRESS_VISIBLE_MS - elapsed);
+        } else {
+          deliverBlob().finally(finishSlot);
+        }
+      };
+      xhr.onerror = function () {
+        delete mediaInflight[msgID];
+        mediaShowError(card, 'network error');
+        finishSlot();
+      };
+      xhr.onabort = function () {
+        delete mediaInflight[msgID];
+        finishSlot();
+      };
+      // Reset progress state for this download — both byte and block
+      // counters live in mediaProgressState[msgID] and only ever go up.
+      mediaProgressState[msgID] = { loaded: 0, total: parseInt(size, 10) || 0, completed: 0, blocks: parseInt(blk, 10) || 0 };
+
+      // Poll the server's per-download block counter so the user sees real
+      // block-level progress (the Go side fetches one DNS block at a time
+      // but io.Copy buffers those into bigger HTTP chunks, hence the
+      // "static then jumps" feel without polling).
+      var pollUrl = '/api/media/progress?ch=' + encodeURIComponent(ch)
+        + '&blk=' + encodeURIComponent(blk)
+        + '&crc=' + encodeURIComponent(crc);
+      var pollTimer = setInterval(async function () {
+        try {
+          var pr = await fetch(pollUrl);
+          if (!pr.ok) return;
+          var pj = await pr.json();
+          // Ignore inactive/zero responses — happens before the server
+          // registers the download or after it finishes. Don't let those
+          // overwrite the live counter and cause the UI to bounce back.
+          if (pj.active === false) return;
+          mediaApplyBlockProgress(card, pj.completed | 0, pj.total | 0);
+        } catch (e) { }
+      }, 500);
+      function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+      var origOnload = xhr.onload, origOnerror = xhr.onerror, origOnabort = xhr.onabort;
+      xhr.onload = function () { stopPoll(); origOnload && origOnload.apply(this, arguments); };
+      xhr.onerror = function () { stopPoll(); origOnerror && origOnerror.apply(this, arguments); };
+      xhr.onabort = function () { stopPoll(); origOnabort && origOnabort.apply(this, arguments); };
+
+      mediaInflight[msgID] = { xhr: xhr };
+      mediaShowProgress(card);
+      progressShownAt = Date.now();
+      requestAnimationFrame(function () { xhr.send(); });
+    }
+
+    // mediaProgressState is the per-download counter. Both xhr.onprogress
+    // (bytes) and the /api/media/progress poll (blocks) write into it, but
+    // values only ever increase — so a poll that lags behind the byte
+    // stream never makes the bar jump backwards.
+    var mediaProgressState = {};
+
+    // mediaApplyBlockProgress updates the size text + fill from the polled
+    // block counter. Driven by /api/media/progress so the user gets real
+    // per-block updates, not byte-buffered estimates.
+    function mediaShowProgress(card) {
+      var domID = card.id;
+      var totalSize = parseInt(card.getAttribute('data-size'), 10) || 0;
+      var blocks = parseInt(card.getAttribute('data-blk'), 10) || 0;
+      var blocksSuffix = blocks > 0 ? ' &middot; 0/' + blocks + ' ' + (t('blocks_label') || 'blocks') : '';
+      var initialText = (totalSize > 0 ? '0 / ' + formatBytes(totalSize) : (t('downloading') || 'Downloading...')) + blocksSuffix;
+      card.classList.add('downloading');
+      if (mediaIsImageTag(card.getAttribute('data-tag'))) {
+        var preview = document.getElementById(domID + '-preview');
+        if (preview) {
+          preview.innerHTML = '<div class="media-progress-overlay" id="' + domID + '-progress">'
+            + '<div class="media-progress-bar"><div class="media-progress-fill" id="' + domID + '-fill" style="width:0%"></div></div>'
+            + '<div class="media-progress-text" id="' + domID + '-text" dir="ltr">' + initialText + '</div>'
+            + '<button class="media-cancel-btn" onclick="mediaStart(\'' + domID + '\')" type="button" title="' + esc(t('cancel') || 'Cancel') + '">&times;</button>'
+            + '</div>';
+        }
+        return;
+      }
+      // File row: rebuild the info column from scratch so the fill always
+      // starts at 0% (clears stale 100% from a previous successful download)
+      // and the cancel button replaces the download button.
+      var label = mediaTagLabel(card.getAttribute('data-tag'));
+      var displayName = card.getAttribute('data-fname') || label;
+      var newInner = '<div class="media-file-icon">' + label.charAt(0) + '</div>'
+        + '<div class="media-file-info">'
+        + '<div class="media-file-name" dir="ltr">' + esc(displayName) + '</div>'
+        + '<div class="media-file-size" id="' + domID + '-text" dir="ltr">' + initialText + '</div>'
+        + '<div class="media-progress-bar media-progress-bar-thin"><div class="media-progress-fill" id="' + domID + '-fill" style="width:0%"></div></div>'
+        + '</div>'
+        + '<div class="media-file-actions" id="' + domID + '-actions">'
+        + '<button class="media-file-btn media-file-btn-cancel" onclick="mediaStart(\'' + domID + '\')" type="button" title="' + esc(t('cancel') || 'Cancel') + '">&times;</button>'
+        + '</div>';
+      card.innerHTML = newInner;
+    }
+
+    // Byte-level update from xhr.onprogress.
+    function mediaUpdateProgress(card, loaded, total) {
+      if (!total || total <= 0) {
+        total = parseInt(card.getAttribute('data-size'), 10) || 0;
+      }
+      var msgID = card.getAttribute('data-msg');
+      var s = mediaProgressState[msgID] || { loaded: 0, total: 0, completed: 0, blocks: parseInt(card.getAttribute('data-blk'), 10) || 0 };
+      if (loaded > s.loaded) s.loaded = loaded;
+      if (total > s.total) s.total = total;
+      mediaProgressState[msgID] = s;
+      mediaRenderProgressState(card);
+    }
+
+    // Block-level update from /api/media/progress poll.
+    function mediaApplyBlockProgress(card, completed, total) {
+      if (!total || total <= 0) return;
+      if (completed < 0) completed = 0;
+      if (completed > total) completed = total;
+      var msgID = card.getAttribute('data-msg');
+      var s = mediaProgressState[msgID] || { loaded: 0, total: parseInt(card.getAttribute('data-size'), 10) || 0, completed: 0, blocks: 0 };
+      if (completed > s.completed) s.completed = completed;
+      if (total > s.blocks) s.blocks = total;
+      mediaProgressState[msgID] = s;
+      mediaRenderProgressState(card);
+    }
+
+    // Render the combined "X / Y (P%) · K/N blocks" string from monotonic
+    // state so the two update sources never fight each other.
+    function mediaRenderProgressState(card) {
+      var msgID = card.getAttribute('data-msg');
+      var s = mediaProgressState[msgID];
+      if (!s) return;
+      // Pick the higher of byte% and block% for the bar so it never goes
+      // backwards even if one side races ahead of the other.
+      var bytePct = s.total > 0 ? Math.min(100, Math.floor(s.loaded * 100 / s.total)) : 0;
+      var blockPct = s.blocks > 0 ? Math.min(100, Math.floor(s.completed * 100 / s.blocks)) : 0;
+      var pct = Math.max(bytePct, blockPct);
+      var fill = document.getElementById(card.id + '-fill');
+      if (fill) {
+        var prevPct = parseInt(fill.style.width, 10) || 0;
+        if (pct > prevPct) fill.style.width = pct + '%';
+      }
+      var txt = document.getElementById(card.id + '-text');
+      if (!txt) return;
+      var head = s.total > 0
+        ? formatBytes(s.loaded) + ' / ' + formatBytes(s.total) + ' (' + pct + '%)'
+        : (s.loaded > 0 ? formatBytes(s.loaded) : (t('downloading') || 'Downloading...'));
+      var blocksSuffix = s.blocks > 0
+        ? ' &middot; ' + s.completed + '/' + s.blocks + ' ' + (t('blocks_label') || 'blocks')
+        : '';
+      txt.innerHTML = head + blocksSuffix;
+    }
+
+    function mediaShowBlob(card, blobURL) {
+      var tag = card.getAttribute('data-tag');
+      var msgID = card.getAttribute('data-msg');
+      var domID = card.id;
+      card.classList.remove('downloading');
+      var entry = mediaBlobs[msgID];
+      var mime = entry && entry.mime ? entry.mime.toLowerCase() : '';
+      var isInlineImage = /^image\/(jpeg|jpg|png|gif|webp|avif|bmp)$/.test(mime);
+      if (mediaIsImageTag(tag) && isInlineImage) {
+        var preview = document.getElementById(domID + '-preview');
+        if (!preview) return;
+        var alt = esc(mediaTagLabel(tag));
+        preview.innerHTML = '<img src="' + escAttr(blobURL) + '" alt="' + alt
+          + '" class="media-image-loaded" onclick="mediaOpen(\'' + msgID + '\')"'
+          + ' onerror="mediaImageFailed(\'' + msgID + '\')">'
+          + '<div class="media-image-actions">' + buildMediaActions(msgID, tag) + '</div>';
+        return;
+      }
+      if (mediaIsImageTag(tag)) {
+        mediaConvertImageToFile(card);
+      }
+      var actions = document.getElementById(domID + '-actions');
+      if (actions) actions.innerHTML = buildMediaActions(msgID, tag);
+      var fill = document.getElementById(domID + '-fill');
+      if (fill) fill.style.width = '100%';
+      var txt = document.getElementById(domID + '-text');
+      if (txt) txt.textContent = formatBytes(parseInt(card.getAttribute('data-size'), 10) || 0) + ' ✓';
+    }
+
+    function mediaImageFailed(msgID) {
+      var card = document.getElementById('media-' + msgID);
+      if (!card) return;
+      mediaConvertImageToFile(card);
+      var actions = document.getElementById(card.id + '-actions');
+      if (actions) actions.innerHTML = buildMediaActions(msgID, card.getAttribute('data-tag'));
+    }
+
+    function mediaConvertImageToFile(card) {
+      var tag = card.getAttribute('data-tag');
+      var domID = card.id;
+      var size = parseInt(card.getAttribute('data-size'), 10) || 0;
+      var blocks = parseInt(card.getAttribute('data-blk'), 10) || 0;
+      var label = mediaTagLabel(tag);
+      var detail = (size > 0 ? formatBytes(size) : '?')
+        + (blocks > 0 ? ' &middot; ' + blocks + ' ' + (t('blocks_label') || 'blocks') : '');
+      card.classList.remove('media-image');
+      card.classList.add('media-file');
+      card.innerHTML = '<div class="media-file-icon">' + label.charAt(0) + '</div>'
+        + '<div class="media-file-info">'
+        + '<div class="media-file-name">' + label + '</div>'
+        + '<div class="media-file-size" id="' + domID + '-text" dir="ltr">' + detail + '</div>'
+        + '<div class="media-progress-bar media-progress-bar-thin"><div class="media-progress-fill" id="' + domID + '-fill" style="width:100%"></div></div>'
+        + '</div>'
+        + '<div class="media-file-actions" id="' + domID + '-actions"></div>';
+    }
+
+    function buildMediaActions(msgID, tag) {
+      var isImage = mediaIsImageTag(tag);
+      var canShare = !!(navigator.share && navigator.canShare);
+      var openTitle = esc(t('media_open') || 'Open');
+      var saveTitle = esc(t('media_save') || 'Save');
+      var shareTitle = esc(t('media_share') || 'Share');
+      var html = '';
+      if (!isImage) {
+        html += '<button class="media-action-icon" onclick="mediaOpen(\'' + msgID + '\')" title="' + openTitle + '" aria-label="' + openTitle + '">&#128279;</button>';
+      }
+      html += '<button class="media-action-icon" onclick="mediaSave(\'' + msgID + '\')" title="' + saveTitle + '" aria-label="' + saveTitle + '">&#128190;</button>';
+      if (canShare) {
+        html += '<button class="media-action-icon" onclick="mediaShare(\'' + msgID + '\')" title="' + shareTitle + '" aria-label="' + shareTitle + '">&#10150;</button>';
+      }
+      return html;
+    }
+
+    function mediaOpen(msgID) {
+      var entry = mediaBlobs[msgID];
+      if (!entry) return;
+      var card = document.getElementById('media-' + msgID);
+      var tag = card ? card.getAttribute('data-tag') : '';
+      if (mediaIsImageTag(tag) && entry.mime && /^image\//i.test(entry.mime)) {
+        showImageLightbox(entry.url, mediaTagLabel(tag));
+        return;
+      }
+      try {
+        var a = document.createElement('a');
+        a.href = entry.url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } catch (e) { }
+    }
+
+    function showImageLightbox(blobURL, alt) {
+      var existing = document.getElementById('mediaLightbox');
+      if (existing) existing.remove();
+      var overlay = document.createElement('div');
+      overlay.id = 'mediaLightbox';
+      overlay.className = 'media-lightbox';
+      overlay.innerHTML = '<button class="media-lightbox-close" type="button" aria-label="' + esc(t('close') || 'Close') + '">&times;</button>'
+        + '<img class="media-lightbox-img" src="' + escAttr(blobURL) + '" alt="' + esc(alt || '') + '">';
+      var close = function () {
+        overlay.removeEventListener('click', onClick);
+        document.removeEventListener('keydown', onKey);
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      };
+      var onClick = function (e) {
+        if (e.target === overlay || (e.target.classList && e.target.classList.contains('media-lightbox-close'))) {
+          close();
+        }
+      };
+      var onKey = function (e) { if (e.key === 'Escape') close(); };
+      overlay.addEventListener('click', onClick);
+      document.addEventListener('keydown', onKey);
+      document.body.appendChild(overlay);
+    }
+
+    function mediaSave(msgID) {
+      var entry = mediaBlobs[msgID];
+      if (!entry) return;
+      var card = document.getElementById('media-' + msgID);
+      var tag = card ? card.getAttribute('data-tag') : '';
+      // Use the wire-format filename when present, otherwise synthesise.
+      var fname = card ? (card.getAttribute('data-fname') || '') : '';
+      if (!fname) {
+        var ext = mediaExtForTag(tag, entry.mime);
+        fname = (mediaTagLabel(tag || 'FILE') + '-' + msgID + '.' + ext).toLowerCase();
+      }
+      var a = document.createElement('a');
+      a.href = entry.url;
+      a.download = fname;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    async function mediaShare(msgID) {
+      var entry = mediaBlobs[msgID];
+      if (!entry) return;
+      var card = document.getElementById('media-' + msgID);
+      var tag = card ? card.getAttribute('data-tag') : '';
+      var fname = card ? (card.getAttribute('data-fname') || '') : '';
+      if (!fname) {
+        var ext = mediaExtForTag(tag, entry.mime);
+        fname = (mediaTagLabel(tag || 'FILE') + '-' + msgID + '.' + ext).toLowerCase();
+      }
+      var file;
+      try {
+        file = new File([entry.blob], fname, { type: entry.mime || 'application/octet-stream' });
+      } catch (e) {
+        mediaSave(msgID);
+        return;
+      }
+      var data = { files: [file], title: fname };
+      if (navigator.canShare && !navigator.canShare(data)) {
+        mediaSave(msgID);
+        return;
+      }
+      try {
+        await navigator.share(data);
+      } catch (e) { }
+    }
+
+    function mediaShowError(card, msg) {
+      card.classList.remove('downloading');
+      var txt = document.getElementById(card.id + '-text');
+      if (txt) txt.textContent = (t('media_failed') || 'Download failed') + ': ' + msg;
+      var fill = document.getElementById(card.id + '-fill');
+      if (fill) fill.style.width = '0%';
+    }
+
+    function mediaResetCard(card) {
+      card.classList.remove('downloading');
+      var domID = card.id;
+      var msgID = card.getAttribute('data-msg');
+      var tag = card.getAttribute('data-tag');
+      var size = parseInt(card.getAttribute('data-size'), 10) || 0;
+      var sizeStr = size > 0 ? formatBytes(size) : '?';
+      var label = mediaTagLabel(tag);
+      if (mediaIsImageTag(tag)) {
+        var preview = document.getElementById(domID + '-preview');
+        if (preview) {
+          preview.innerHTML = '<button class="media-action" onclick="mediaStart(\'' + domID + '\')" type="button" title="' + esc(t('download') || 'Download') + '">'
+            + '<span class="media-icon">&#11015;</span>'
+            + '<span class="media-meta">' + label + ' &middot; ' + sizeStr + '</span>'
+            + '</button>';
+        }
+        return;
+      }
+      var actions = document.getElementById(domID + '-actions');
+      if (actions) {
+        actions.innerHTML = '<button class="media-file-btn" onclick="mediaStart(\'' + domID + '\')" type="button" title="' + esc(t('download') || 'Download') + '">&#11015;</button>';
+      }
+      var fill = document.getElementById(domID + '-fill');
+      if (fill) fill.style.width = '0%';
+      var txt = document.getElementById(domID + '-text');
+      if (txt) txt.textContent = sizeStr;
     }
 
     function renderMessages(msgs, gaps) {
@@ -3417,7 +4817,10 @@
             textHtml = linkify(replyBody).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">');
           }
           if (replyId > 0 && msgByID[replyId]) {
-            var rpText = (msgByID[replyId].Text || msgByID[replyId].text || '').replace(/^\[(?:IMAGE|VIDEO|FILE|AUDIO|STICKER|GIF|POLL|CONTACT|LOCATION|REPLY)[^\]]*\](?::\d+)?\n?/, '');
+            // Strip the leading [TAG] plus any metadata suffix (legacy ":NN" or
+            // the new "<size>:<dl>:<ch>:<blk>:<crc>") and the trailing newline
+            // so the reply preview only shows the human caption.
+            var rpText = (msgByID[replyId].Text || msgByID[replyId].text || '').replace(/^\[(?:IMAGE|VIDEO|FILE|AUDIO|STICKER|GIF|POLL|CONTACT|LOCATION|REPLY)[^\]]*\][^\n]*\n?/, '');
             if (rpText.length > 120) rpText = rpText.substring(0, 120) + '…';
             mediaHtml += '<div class="reply-preview" onclick="scrollToMsg(' + replyId + ')" title="#' + replyId + '">' + esc(rpText) + '</div>';
           }
@@ -3427,18 +4830,56 @@
           var pollBody = text.substring('[POLL]'.length).replace(/^\n/, '');
           textHtml = renderPollCard(pollBody);
         } else {
-          // Other media types
           var mediaTypes = ['[IMAGE]', '[VIDEO]', '[FILE]', '[AUDIO]', '[STICKER]', '[GIF]', '[CONTACT]', '[LOCATION]'];
-          for (var m = 0; m < mediaTypes.length; m++) {
-            if (text.indexOf(mediaTypes[m]) === 0) {
-              mediaHtml = '<div class="media-tag">' + mediaTypes[m] + '</div>';
-              textHtml = linkify(text.substring(mediaTypes[m].length).replace(/^\n/, '')).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">'); break
+          var rest = text;
+          var cards = [];
+          while (true) {
+            var matchedTag = null;
+            for (var m = 0; m < mediaTypes.length; m++) {
+              if (rest.indexOf(mediaTypes[m]) === 0) { matchedTag = mediaTypes[m]; break; }
             }
+            if (!matchedTag) break;
+            var p = parseDownloadableMedia(rest, matchedTag);
+            // Bare "[TAG]<word>" form (no leading "\n", non-numeric "<word>") is
+            // caption text that happens to start with a tag literal — don't
+            // treat it as media. The wire forms are either "[TAG]\n..." or
+            // "[TAG]<digit>:<dl>:...".
+            var afterTag = rest.charAt(matchedTag.length);
+            var isLegacyOrStructured = afterTag === '' || afterTag === '\n' || (afterTag >= '0' && afterTag <= '9');
+            if (!isLegacyOrStructured) break;
+            cards.push({ tag: matchedTag, parsed: p });
+            rest = p.caption;
+          }
+          if (cards.length === 0) { /* no tag matched */ }
+          else if (cards.length === 1) {
+            var c0 = cards[0];
+            if (c0.parsed.downloadable || c0.parsed.size > 0) {
+              mediaHtml = renderDownloadableMedia(c0.tag, c0.parsed, id);
+              textHtml = c0.parsed.caption
+                ? linkify(c0.parsed.caption).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">')
+                : '';
+            } else {
+              mediaHtml = '<div class="media-tag">' + c0.tag + '</div>';
+              textHtml = linkify(text.substring(c0.tag.length).replace(/^\n/, '')).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">');
+            }
+          } else {
+            mediaHtml = '<div class="media-album">';
+            for (var k = 0; k < cards.length; k++) {
+              var ck = cards[k];
+              mediaHtml += renderDownloadableMedia(ck.tag, ck.parsed, id + '-' + k);
+            }
+            mediaHtml += '</div>';
+            textHtml = rest
+              ? linkify(rest).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">')
+              : '';
           }
         }
-        html += '<div class="msg' + (isPersian(text) ? ' rtl-msg' : '') + '" dir="auto">' + mediaHtml + textHtml + '<div class="msg-meta"><button class="msg-copy-btn" onclick="copyMsg(' + i + ')">' + t('copy') + '</button><span>#' + id + '</span><span>' + timeStr + '</span></div></div>';
+        var hasMediaCard = mediaHtml.indexOf('media-card') !== -1;
+        var msgClasses = 'msg' + (isPersian(text) ? ' rtl-msg' : '') + (hasMediaCard ? ' has-media' : '');
+        html += '<div class="' + msgClasses + '" dir="auto">' + mediaHtml + textHtml + '<div class="msg-meta"><button class="msg-copy-btn" onclick="copyMsg(' + i + ')">' + t('copy') + '</button><span>#' + id + '</span><span>' + timeStr + '</span></div></div>';
       }
       el.innerHTML = html;
+      try { mediaTryRestoreVisibleCards(); } catch (e) { }
       currentMaxMsgID = maxMsgID;
       currentMaxTimestamp = maxTimestamp;
       // On first visit, store max timestamp (no separator shown)
@@ -3646,11 +5087,10 @@
       var label = (fracMatch ? (completed + '/' + total) : ('Channel ' + channelNum)) + (chName ? ' (' + chName + ')' : '');
       var panel = document.getElementById('progressPanel');
       var item = document.getElementById('prog-ch-' + channelNum);
-      // First block arrived — metadata fetch is done, remove the static "fetching" bar
       var fetchBar = document.getElementById('prog-fetch-ch-' + channelNum); if (fetchBar) fetchBar.remove();
       if (!item) {
         item = document.createElement('div'); item.id = 'prog-ch-' + channelNum; item.className = 'progress-item';
-        item.innerHTML = '<button class="progress-close" onclick="this.parentNode.remove()" title="Dismiss">&times;</button><div class="progress-label"></div><div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>';
+        item.innerHTML = '<button class="progress-close" onclick="this.parentNode.remove()" title="' + esc(t('dismiss') || 'Dismiss') + '">&times;</button><div class="progress-label"></div><div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>';
         panel.appendChild(item);
       }
       item.querySelector('.progress-label').textContent = label;
@@ -3795,9 +5235,13 @@
     }
 
     // ===== TOAST =====
-    function showToast(msg) {
-      var el = document.getElementById('toast'); el.textContent = msg; el.classList.add('show');
-      setTimeout(function () { el.classList.remove('show') }, 2200);
+    var _toastTimer = null;
+    function showToast(msg, ms) {
+      var el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      if (_toastTimer) clearTimeout(_toastTimer);
+      _toastTimer = setTimeout(function () { el.classList.remove('show'); _toastTimer = null; }, ms || 2200);
     }
 
     // ===== UTILITIES =====

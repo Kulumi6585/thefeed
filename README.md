@@ -52,6 +52,30 @@ DNS-based feed reader for Telegram channels and public X accounts. Designed for 
 
 All communication is encrypted with AES-256 and transmitted via standard DNS TXT queries and responses. Traffic is designed to blend with normal DNS activity. Message data is compressed before encryption.
 
+## Image and File Downloads
+
+Messages with attached photos, files, GIFs, audio, and videos can be cached on the server and downloaded over the same encrypted DNS channel.
+
+The server downloads each attached media file (deduped by upstream id and content hash), assigns it a slot in a reserved channel range (`10000`–`60000`), and splits the bytes into the same-sized blocks used elsewhere. The message text gains a small metadata header:
+
+```
+[IMAGE]<size>:<dl>:<ch>:<blk>:<crc32>
+optional caption
+```
+
+`<dl>=0` means the file exceeded the server's size cap and isn't cached. Old clients render the header as a regular caption line.
+
+Block 0 of every cached file begins with a 16-byte protocol header — 4 bytes CRC32 of the (decompressed) content, 1 byte version, 1 byte compression, 10 bytes reserved for future fields. The client checks the CRC against the expected value from the message metadata before delivering any bytes, so a stale message pointing to a slot the server has since reused for a different file is rejected after a single block. The remaining bytes are decompressed per the compression byte. Downloads are cached on the client (IndexedDB, 7 days) and on the local thefeed-client server (`<dataDir>/media-cache/`, 7 days) so multiple devices behind one client share a single DNS-tunnelled fetch. Concurrent downloads are limited to one at a time; extra clicks are queued.
+
+Server flags:
+
+- `--no-media` — disable the feature.
+- `--media-max-size` (KB, default 100) — per-file size cap.
+- `--media-cache-ttl` (minutes, default 600) — entry lifetime.
+- `--media-compression` (default `gzip`) — `none`, `gzip`, or `deflate`. The compression byte is carried in the block-0 header so the client can decompress without prior knowledge.
+
+The hourly DNS report includes `totalMediaQueries` and a `mediaCache` block (entries, bytes, hits, misses, evictions).
+
 ## Downloads
 
 [Releases](https://github.com/sartoopjj/thefeed/releases)
@@ -101,6 +125,22 @@ Update:
 ```bash
 sudo bash -c "$(curl -Ls https://raw.githubusercontent.com/sartoopjj/thefeed/main/scripts/install.sh)"
 ```
+
+Install a specific version (rollback, beta, or rc):
+```bash
+# Roll back to a known-good tag
+curl -Ls https://raw.githubusercontent.com/sartoopjj/thefeed/main/scripts/install.sh | sudo bash -s -- --version v0.9.2
+
+# Install the most recent pre-release (beta / rc)
+curl -Ls https://raw.githubusercontent.com/sartoopjj/thefeed/main/scripts/install.sh | sudo bash -s -- --pre
+
+# List recent releases (stable / pre-release labels)
+curl -Ls https://raw.githubusercontent.com/sartoopjj/thefeed/main/scripts/install.sh | sudo bash -s -- --list
+```
+
+Short forms: `-v <tag>` is the same as `--version <tag>`. The legacy positional form
+`sudo bash install.sh v1.0.0` still works.
+
 Re-login: `curl -Ls https://raw.githubusercontent.com/sartoopjj/thefeed/main/scripts/install.sh | sudo bash -s -- --login`
 Uninstall: `curl -Ls https://raw.githubusercontent.com/sartoopjj/thefeed/main/scripts/install.sh | sudo bash -s -- --uninstall`
 
@@ -310,6 +350,10 @@ Environment variables: `THEFEED_DOMAIN`, `THEFEED_KEY`, `THEFEED_MSG_LIMIT`, `TH
 | `--padding` | `32` | Max random padding bytes (0=disabled) |
 | `--msg-limit` | `15` | Maximum messages to fetch per Telegram channel |
 | `--allow-manage` | `false` | Allow remote send/channel management (default: disabled) |
+| `--no-media` | `false` | Disable downloading and serving image/file media |
+| `--media-max-size` | `100` | Per-file size cap for cached media in KB (0 = no cap) |
+| `--media-cache-ttl` | `600` | How long a cached media entry stays available, in minutes |
+| `--media-compression` | `gzip` | Compression for cached media: `none`, `gzip`, or `deflate` |
 | `--version` | | Show version and exit |
 
 ### Client

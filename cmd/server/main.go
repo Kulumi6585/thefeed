@@ -37,6 +37,10 @@ func main() {
 	msgLimit := flag.Int("msg-limit", 15, "Maximum messages to fetch per Telegram channel")
 	allowManage := flag.Bool("allow-manage", false, "Allow remote channel management and sending via DNS")
 	debug := flag.Bool("debug", false, "Log every decoded DNS query")
+	noMedia := flag.Bool("no-media", false, "Disable downloading and serving image/file media (clients see [TAG] only)")
+	mediaMaxSizeKB := flag.Int("media-max-size", 100, "Per-file size cap for cached media in KB (0 = no cap)")
+	mediaCacheTTLMin := flag.Int("media-cache-ttl", 600, "How long a cached media entry stays available, in minutes")
+	mediaCompression := flag.String("media-compression", "gzip", "Compression for cached media: none|gzip|deflate")
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "thefeed-server %s\n\nServes Telegram/X feed content over encrypted DNS for censorship-resistant access.\n\nUsage:\n  thefeed-server [flags]\n\nFlags:\n", version.Version)
@@ -141,17 +145,21 @@ func main() {
 	}
 
 	cfg := server.Config{
-		ListenAddr:    *listen,
-		Domain:        *domain,
-		Passphrase:    *key,
-		ChannelsFile:  *channelsFile,
-		XAccountsFile: *xAccountsFile,
-		XRSSInstances: *xRSSInstances,
-		MaxPadding:    *maxPadding,
-		MsgLimit:      *msgLimit,
-		NoTelegram:    *noTelegram,
-		AllowManage:   *allowManage,
-		Debug:         *debug,
+		ListenAddr:       *listen,
+		Domain:           *domain,
+		Passphrase:       *key,
+		ChannelsFile:     *channelsFile,
+		XAccountsFile:    *xAccountsFile,
+		XRSSInstances:    *xRSSInstances,
+		MaxPadding:       *maxPadding,
+		MsgLimit:         *msgLimit,
+		NoTelegram:       *noTelegram,
+		AllowManage:      *allowManage,
+		Debug:            *debug,
+		NoMedia:          *noMedia,
+		MediaMaxSize:     int64(*mediaMaxSizeKB) * 1024,
+		MediaCacheTTL:    *mediaCacheTTLMin,
+		MediaCompression: *mediaCompression,
 		Telegram: server.TelegramConfig{
 			APIID:       id,
 			APIHash:     *apiHash,

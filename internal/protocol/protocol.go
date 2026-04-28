@@ -20,6 +20,12 @@ const (
 	// DefaultBlockPayload is kept for compatibility; equals MaxBlockPayload.
 	DefaultBlockPayload = MaxBlockPayload
 
+	// MediaBlockPayload is the fixed payload size used for media (image/file)
+	// blocks. Media blocks are raw binary, and using a fixed size simplifies
+	// both server-side block boundaries and client-side range/resume math.
+	// Tuned for safe DNS UDP response after AES-GCM + base64 + padding.
+	MediaBlockPayload = MaxBlockPayload
+
 	// DefaultMaxPadding is the default random padding added to responses to vary DNS response size.
 	DefaultMaxPadding = 32
 
@@ -28,6 +34,14 @@ const (
 
 	// MetadataChannel is the special channel number for server metadata.
 	MetadataChannel = 0
+
+	// MediaChannelStart and MediaChannelEnd bound the channel-number range
+	// reserved for cached binary media (images, files, ...). Each cached file
+	// occupies one channel; bytes are split into raw blocks served via the
+	// usual DNS TXT path. The range is well above typical feed channel counts
+	// and well below the special control channels at the top of uint16 space.
+	MediaChannelStart uint16 = 10000
+	MediaChannelEnd   uint16 = 60000 // inclusive
 
 	// MarkerSize is the random marker in metadata to verify data freshness.
 	MarkerSize = 3
@@ -45,6 +59,14 @@ const (
 	MsgHeaderSize      = MsgIDSize + MsgTimestampSize + MsgLengthSize // 10
 	MsgContentHashSize = 4
 )
+
+// IsMediaChannel reports whether ch falls inside the reserved media-blob
+// channel range. Media channels are not enumerated in Metadata; the client
+// learns each (channel, blocks, hash) tuple from the corresponding feed
+// message text via [TAG]<size>:<dl>:<ch>:<blk>:<crc32hex>.
+func IsMediaChannel(ch uint16) bool {
+	return ch >= MediaChannelStart && ch <= MediaChannelEnd
+}
 
 // Media placeholder strings for non-text content.
 const (

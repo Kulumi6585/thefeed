@@ -104,6 +104,76 @@ func TestMergeMessages(t *testing.T) {
 	}
 }
 
+func TestParsePublicMessagesAlbumStacksHeaders(t *testing.T) {
+	// Album = one data-post with N nested photo wraps. We must emit N
+	// stacked [IMAGE] headers so albumSpan suppresses the absorbed-sibling
+	// "1 missed" gap.
+	body := []byte(`
+		<html><body>
+		<div class="tgme_widget_message" data-post="testchan/210">
+			<a class="tgme_widget_message_date"><time datetime="2026-04-10T12:00:00+00:00"></time></a>
+			<a class="tgme_widget_message_photo_wrap" style="background-image:url('https://cdn.telegram.org/img1.jpg')"></a>
+			<a class="tgme_widget_message_photo_wrap" style="background-image:url('https://cdn.telegram.org/img2.jpg')"></a>
+			<a class="tgme_widget_message_photo_wrap" style="background-image:url('https://cdn.telegram.org/img3.jpg')"></a>
+			<div class="tgme_widget_message_text">album caption</div>
+		</div>
+		</body></html>
+	`)
+
+	msgs, sources, err := parsePublicMessagesWithMedia(body)
+	if err != nil {
+		t.Fatalf("parsePublicMessagesWithMedia: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("len(msgs) = %d, want 1", len(msgs))
+	}
+	wantText := "[IMAGE]\n[IMAGE]\n[IMAGE]\nalbum caption"
+	if msgs[0].Text != wantText {
+		t.Fatalf("msgs[0].Text = %q, want %q", msgs[0].Text, wantText)
+	}
+	if len(sources) != 1 {
+		t.Fatalf("len(sources) = %d, want 1", len(sources))
+	}
+	src := sources[0]
+	if src.tag != protocol.MediaImage {
+		t.Errorf("src.tag = %q, want %q", src.tag, protocol.MediaImage)
+	}
+	if src.url != "https://cdn.telegram.org/img1.jpg" {
+		t.Errorf("src.url = %q, want first photo URL", src.url)
+	}
+	if len(src.extraURLs) != 2 ||
+		src.extraURLs[0] != "https://cdn.telegram.org/img2.jpg" ||
+		src.extraURLs[1] != "https://cdn.telegram.org/img3.jpg" {
+		t.Errorf("src.extraURLs = %v, want [img2, img3]", src.extraURLs)
+	}
+}
+
+func TestParsePublicMessagesSinglePhotoUnchanged(t *testing.T) {
+	// Single photo: one [IMAGE] header, no extraURLs.
+	body := []byte(`
+		<html><body>
+		<div class="tgme_widget_message" data-post="testchan/220">
+			<a class="tgme_widget_message_photo_wrap" style="background-image:url('https://cdn.telegram.org/single.jpg')"></a>
+			<div class="tgme_widget_message_text">just one</div>
+		</div>
+		</body></html>
+	`)
+	msgs, sources, err := parsePublicMessagesWithMedia(body)
+	if err != nil {
+		t.Fatalf("parsePublicMessagesWithMedia: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("len(msgs) = %d, want 1", len(msgs))
+	}
+	wantText := "[IMAGE]\njust one"
+	if msgs[0].Text != wantText {
+		t.Fatalf("msgs[0].Text = %q, want %q", msgs[0].Text, wantText)
+	}
+	if sources[0].url != "https://cdn.telegram.org/single.jpg" || len(sources[0].extraURLs) != 0 {
+		t.Errorf("source = %+v, want url=single, extraURLs empty", sources[0])
+	}
+}
+
 func TestParsePublicMessagesReplyPreviewUsesMainBody(t *testing.T) {
 	body := []byte(`
 		<html><body>

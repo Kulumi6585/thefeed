@@ -247,7 +247,7 @@ func (xr *XPublicReader) fetchAccount(ctx context.Context, username string) ([]p
 			continue
 		}
 
-		msgs, title, err := parseXRSSMessages(body, username)
+		msgs, sources, title, err := parseXRSSMessagesWithMedia(body, username)
 		if err != nil {
 			log.Printf("[x] @%s: instance %s: parse error: %v", username, instance, err)
 			lastErr = fmt.Errorf("%s: %w", instance, err)
@@ -255,9 +255,15 @@ func (xr *XPublicReader) fetchAccount(ctx context.Context, username string) ([]p
 		}
 		// Filter out garbled messages (invalid UTF-8 or mostly non-printable).
 		cleaned := msgs[:0]
-		for _, m := range msgs {
+		cleanedSources := sources[:0]
+		for i, m := range msgs {
 			if isReadableText(m.Text) {
 				cleaned = append(cleaned, m)
+				if i < len(sources) {
+					cleanedSources = append(cleanedSources, sources[i])
+				} else {
+					cleanedSources = append(cleanedSources, mediaSource{})
+				}
 			} else {
 				log.Printf("[x] @%s: skipping garbled message ID=%d (len=%d)", username, m.ID, len(m.Text))
 			}
@@ -265,6 +271,14 @@ func (xr *XPublicReader) fetchAccount(ctx context.Context, username string) ([]p
 		if len(cleaned) == 0 {
 			lastErr = fmt.Errorf("%s: all %d messages were garbled", instance, len(msgs))
 			continue
+		}
+		// Run image downloads when a media cache is attached. Each Nitter
+		// item carries an image URL we extracted from the description; for
+		// non-image media types we have no public URL to fetch on X, so the
+		// downstream rendering simply falls back to the legacy [TAG]\ncaption
+		// form for those.
+		if cache := xr.feed.MediaCache(); cache != nil && len(cleanedSources) > 0 {
+			applyHTTPMediaSources(ctx, cache, cleaned, cleanedSources)
 		}
 		return cleaned, title, nil
 	}
@@ -291,19 +305,32 @@ type xRSSItem struct {
 }
 
 func parseXRSSMessages(body []byte, feedUser string) ([]protocol.Message, string, error) {
+	msgs, _, title, err := parseXRSSMessagesWithMedia(body, feedUser)
+	return msgs, title, err
+}
+
+// parseXRSSMessagesWithMedia parses a Nitter RSS feed and additionally
+// returns one mediaSource per parsed message — same length and order — so
+// the caller can run HTTP downloads against the extracted image URLs and
+// rewrite messages to use the [IMAGE]<size>:<dl>:<ch>:<blk>:<crc32> form.
+// X posts on Nitter can contain multiple images per status; we only surface
+// the *first* one for now, which keeps the download pipeline simple and
+// matches what the legacy text rendering shows.
+func parseXRSSMessagesWithMedia(body []byte, feedUser string) ([]protocol.Message, []mediaSource, string, error) {
 	body = sanitizeUTF8(body)
 	var feed xRSS
 	if err := xml.Unmarshal(body, &feed); err != nil {
-		return nil, "", fmt.Errorf("parse rss: %w", err)
+		return nil, nil, "", fmt.Errorf("parse rss: %w", err)
 	}
 	if len(feed.Channel.Items) == 0 {
-		return nil, "", fmt.Errorf("empty rss feed")
+		return nil, nil, "", fmt.Errorf("empty rss feed")
 	}
 
 	title := strings.TrimSpace(feed.Channel.Title)
 
 	feedUserLower := strings.ToLower(strings.TrimPrefix(feedUser, "@"))
 	msgs := make([]protocol.Message, 0, len(feed.Channel.Items))
+	sources := make([]mediaSource, 0, len(feed.Channel.Items))
 	for _, item := range feed.Channel.Items {
 		id, err := extractXStatusID(item.GUID, item.Link)
 		if err != nil {
@@ -329,12 +356,60 @@ func parseXRSSMessages(body []byte, feedUser string) ([]protocol.Message, string
 			}
 		}
 
+		// Best-effort image extraction from the description / encoded HTML.
+		src := mediaSource{}
+		if u := extractFirstImgSrc(item.Description); u != "" {
+			src = mediaSource{tag: protocol.MediaImage, url: u}
+		} else if u := extractFirstImgSrc(item.Encoded); u != "" {
+			src = mediaSource{tag: protocol.MediaImage, url: u}
+		}
+
 		msgs = append(msgs, protocol.Message{ID: id, Timestamp: ts, Text: text})
+		sources = append(sources, src)
 	}
 	if len(msgs) == 0 {
-		return nil, "", fmt.Errorf("no parseable posts")
+		return nil, nil, "", fmt.Errorf("no parseable posts")
 	}
-	return msgs, title, nil
+	return msgs, sources, title, nil
+}
+
+// extractFirstImgSrc scans an HTML fragment for the first <img src="..."> and
+// returns the URL value. Returns "" when no img is present. We avoid pulling
+// in golang.org/x/net/html for this single-purpose lookup; the regex only
+// needs to handle the simple cases Nitter generates.
+func extractFirstImgSrc(htmlFrag string) string {
+	if htmlFrag == "" {
+		return ""
+	}
+	low := strings.ToLower(htmlFrag)
+	idx := strings.Index(low, "<img ")
+	if idx < 0 {
+		return ""
+	}
+	tail := htmlFrag[idx:]
+	srcIdx := strings.Index(strings.ToLower(tail), "src=")
+	if srcIdx < 0 {
+		return ""
+	}
+	tail = tail[srcIdx+len("src="):]
+	if len(tail) == 0 {
+		return ""
+	}
+	quote := tail[0]
+	if quote != '"' && quote != '\'' {
+		// Bare attribute value — read until whitespace or '>'.
+		end := strings.IndexAny(tail, " >")
+		if end < 0 {
+			return ""
+		}
+		return strings.TrimSpace(tail[:end])
+	}
+	tail = tail[1:]
+	end := strings.IndexByte(tail, quote)
+	if end < 0 {
+		return ""
+	}
+	return tail[:end]
 }
 
 // extractLinkUsername extracts the username from a Nitter/X status URL.

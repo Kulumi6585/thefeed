@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/sartoopjj/thefeed/internal/protocol"
 )
@@ -24,7 +25,21 @@ type Config struct {
 	NoTelegram    bool // if true, fetch public channels without Telegram login
 	AllowManage   bool // if true, remote channel management and sending via DNS is allowed
 	Debug         bool // if true, log every decoded DNS query
-	Telegram      TelegramConfig
+	// NoMedia disables downloading and serving image/file media. When set, the
+	// server emits the legacy [TAG]\ncaption form for media messages so old
+	// clients keep working unchanged.
+	NoMedia bool
+	// MediaMaxSize is the per-file cap in bytes for cached media. 0 means no
+	// cap (not recommended in production).
+	MediaMaxSize int64
+	// MediaCacheTTL is the cache lifetime in minutes for a single entry. The
+	// effective TTL is reset whenever the same upstream id is fetched again.
+	MediaCacheTTL int
+	// MediaCompression names the compression applied to cached media bytes
+	// before they're split into DNS blocks. One of "none", "gzip",
+	// "deflate". Empty defaults to "gzip".
+	MediaCompression string
+	Telegram         TelegramConfig
 }
 
 // Server orchestrates the DNS server and Telegram reader.
@@ -62,6 +77,39 @@ func (s *Server) Run(ctx context.Context) error {
 	queryKey, responseKey, err := protocol.DeriveKeys(s.cfg.Passphrase)
 	if err != nil {
 		return fmt.Errorf("derive keys: %w", err)
+	}
+
+	SetMediaDebugLogs(s.cfg.Debug)
+
+	// Configure media cache before any reader starts so the very first fetch
+	// cycle can populate it. When --no-media is set we leave Feed.media as
+	// nil; the readers fall through to the legacy [TAG]\ncaption form, and
+	// Feed.GetBlock rejects media-channel queries with not-found.
+	if !s.cfg.NoMedia {
+		ttlMin := s.cfg.MediaCacheTTL
+		if ttlMin <= 0 {
+			ttlMin = 600
+		}
+		ttl := time.Duration(ttlMin) * time.Minute
+		compName := s.cfg.MediaCompression
+		if compName == "" {
+			compName = "gzip"
+		}
+		compression, err := protocol.ParseMediaCompressionName(compName)
+		if err != nil {
+			return fmt.Errorf("--media-compression: %w", err)
+		}
+		mediaCache := NewMediaCache(MediaCacheConfig{
+			MaxFileBytes: s.cfg.MediaMaxSize,
+			TTL:          ttl,
+			Compression:  compression,
+			Logf:         logfMedia,
+		})
+		s.feed.SetMediaCache(mediaCache)
+		log.Printf("[server] media cache enabled: max-size=%d bytes, ttl=%s, compression=%s", s.cfg.MediaMaxSize, ttl, compression)
+		go s.runMediaSweep(ctx, mediaCache, ttl)
+	} else {
+		log.Println("[server] media cache disabled (--no-media)")
 	}
 
 	go startLatestVersionTracker(ctx, s.feed)
@@ -179,4 +227,30 @@ func prefixXAccounts(accounts []string) []string {
 		out[i] = "x/" + a
 	}
 	return out
+}
+
+// runMediaSweep periodically evicts expired entries from the cache. The
+// interval is min(ttl/4, 5min) so we don't waste cycles on long-TTL configs
+// while still reclaiming slots in time under steady-state churn.
+func (s *Server) runMediaSweep(ctx context.Context, cache *MediaCache, ttl time.Duration) {
+	if cache == nil {
+		return
+	}
+	interval := ttl / 4
+	if interval <= 0 || interval > 5*time.Minute {
+		interval = 5 * time.Minute
+	}
+	if interval < 30*time.Second {
+		interval = 30 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cache.Sweep()
+		}
+	}
 }

@@ -58,6 +58,7 @@ type hourlyFetchReport struct {
 	totalQueries    int64
 	metadataQueries int64
 	versionQueries  int64
+	mediaQueries    int64 // queries that landed in the media-blob channel range
 	perChannel      map[uint16]*channelFetchStats
 	perResolver     map[string]int64
 }
@@ -696,6 +697,13 @@ func recordReportQuery(rep *hourlyFetchReport, event reportEvent) {
 		rep.versionQueries++
 		return
 	}
+	if protocol.IsMediaChannel(channel) {
+		// We don't fan out per-media-channel stats — the channel-id is just
+		// a transient slot, and 50K possible ids would explode the report.
+		// Total media-query volume is enough for the operator's purposes.
+		rep.mediaQueries++
+		return
+	}
 
 	stats := rep.perChannel[channel]
 	if stats == nil {
@@ -769,9 +777,13 @@ func (s *DNSServer) emitHourlyReport(rep *hourlyFetchReport, final bool) {
 		"totalDnsQueries":      rep.totalQueries,
 		"totalMetadataQueries": rep.metadataQueries,
 		"totalVersionQueries":  rep.versionQueries,
+		"totalMediaQueries":    rep.mediaQueries,
 		"channels":             entries,
 		"topResolvers":         resolvers,
 		"finalFlush":           final,
+	}
+	if mediaCache := s.feed.MediaCache(); mediaCache != nil {
+		payload["mediaCache"] = mediaCache.Stats()
 	}
 	b, err := json.Marshal(payload)
 	if err != nil {

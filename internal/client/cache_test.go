@@ -221,6 +221,111 @@ func TestCacheGapDetection_NoGapWhenFewMessages(t *testing.T) {
 	}
 }
 
+func TestCacheGapDetection_AlbumNoFalsePositive(t *testing.T) {
+	cache, _ := NewCache(t.TempDir())
+
+	// 10 sequential messages where ID=5 is a 2-image album: it absorbs ID 6
+	// (a real Telegram behaviour). The next message is ID 7. Without the
+	// album-aware fix, the gap detector would flag a missing ID 6.
+	msgs := []protocol.Message{
+		{ID: 1, Timestamp: 1700000000, Text: "a"},
+		{ID: 2, Timestamp: 1700000001, Text: "b"},
+		{ID: 3, Timestamp: 1700000002, Text: "c"},
+		{ID: 4, Timestamp: 1700000003, Text: "d"},
+		{ID: 5, Timestamp: 1700000004, Text: "[IMAGE]100:0:0:0:abcd1234:img1.jpg\n[IMAGE]200:0:0:0:abcd5678:img2.jpg\nalbum caption"},
+		// ID 6 is absorbed into the album above; the feed jumps to 7.
+		{ID: 7, Timestamp: 1700000005, Text: "e"},
+		{ID: 8, Timestamp: 1700000006, Text: "f"},
+		{ID: 9, Timestamp: 1700000007, Text: "g"},
+		{ID: 10, Timestamp: 1700000008, Text: "h"},
+		{ID: 11, Timestamp: 1700000009, Text: "i"},
+	}
+	result, _ := cache.MergeAndPut("albumchan", msgs)
+
+	if len(result.Gaps) != 0 {
+		t.Errorf("album-absorbed sibling should not be flagged as a gap, got %+v", result.Gaps)
+	}
+}
+
+func TestCacheGapDetection_AlbumWithRealGap(t *testing.T) {
+	cache, _ := NewCache(t.TempDir())
+
+	// 3-image album at ID=5 absorbs IDs 6,7. A real gap of IDs 8,9 follows
+	// before ID=10. The detector should report a single 2-message gap.
+	msgs := []protocol.Message{
+		{ID: 1, Timestamp: 1700000000, Text: "a"},
+		{ID: 2, Timestamp: 1700000001, Text: "b"},
+		{ID: 3, Timestamp: 1700000002, Text: "c"},
+		{ID: 4, Timestamp: 1700000003, Text: "d"},
+		{ID: 5, Timestamp: 1700000004, Text: "[IMAGE]100:0:0:0:aaaaaaaa:1.jpg\n[IMAGE]200:0:0:0:bbbbbbbb:2.jpg\n[IMAGE]300:0:0:0:cccccccc:3.jpg\ncap"},
+		// IDs 6,7 absorbed; IDs 8,9 truly missing; resume at 10.
+		{ID: 10, Timestamp: 1700000010, Text: "e"},
+		{ID: 11, Timestamp: 1700000011, Text: "f"},
+		{ID: 12, Timestamp: 1700000012, Text: "g"},
+		{ID: 13, Timestamp: 1700000013, Text: "h"},
+		{ID: 14, Timestamp: 1700000014, Text: "i"},
+		{ID: 15, Timestamp: 1700000015, Text: "j"},
+	}
+	result, _ := cache.MergeAndPut("albumgap", msgs)
+
+	if len(result.Gaps) != 1 {
+		t.Fatalf("expected exactly one gap, got %+v", result.Gaps)
+	}
+	g := result.Gaps[0]
+	if g.AfterID != 7 || g.BeforeID != 10 || g.Count != 2 {
+		t.Errorf("gap = %+v, want AfterID=7 BeforeID=10 Count=2", g)
+	}
+}
+
+func TestCacheGapDetection_AlbumWithReplyPrefix(t *testing.T) {
+	cache, _ := NewCache(t.TempDir())
+
+	// [REPLY]:42 prefix before the media headers should still let albumSpan
+	// count the headers correctly.
+	msgs := []protocol.Message{
+		{ID: 1, Timestamp: 1700000000, Text: "a"},
+		{ID: 2, Timestamp: 1700000001, Text: "b"},
+		{ID: 3, Timestamp: 1700000002, Text: "c"},
+		{ID: 4, Timestamp: 1700000003, Text: "d"},
+		{ID: 5, Timestamp: 1700000004, Text: "[REPLY]:42\n[IMAGE]100:0:0:0:aaaaaaaa:1.jpg\n[IMAGE]200:0:0:0:bbbbbbbb:2.jpg\nreplied caption"},
+		// ID 6 absorbed.
+		{ID: 7, Timestamp: 1700000005, Text: "e"},
+		{ID: 8, Timestamp: 1700000006, Text: "f"},
+		{ID: 9, Timestamp: 1700000007, Text: "g"},
+		{ID: 10, Timestamp: 1700000008, Text: "h"},
+		{ID: 11, Timestamp: 1700000009, Text: "i"},
+	}
+	result, _ := cache.MergeAndPut("replychan", msgs)
+
+	if len(result.Gaps) != 0 {
+		t.Errorf("album with reply prefix should not produce false gaps, got %+v", result.Gaps)
+	}
+}
+
+func TestAlbumSpan(t *testing.T) {
+	cases := []struct {
+		name string
+		text string
+		want int
+	}{
+		{"plain text", "hello world", 0},
+		{"single image legacy", "[IMAGE]\ncaption", 1},
+		{"single image downloadable", "[IMAGE]100:0:0:0:abcd1234:f.jpg\ncap", 1},
+		{"two images", "[IMAGE]100:0:0:0:aa:1.jpg\n[IMAGE]200:0:0:0:bb:2.jpg\ncap", 2},
+		{"three mixed", "[IMAGE]1:0:0:0:aa:a.jpg\n[VIDEO]2:0:0:0:bb:b.mp4\n[FILE]3:0:0:0:cc:c.pdf\nx", 3},
+		{"with reply prefix", "[REPLY]:99\n[IMAGE]100:0:0:0:aa:1.jpg\n[IMAGE]200:0:0:0:bb:2.jpg\ncap", 2},
+		{"reply only no media", "[REPLY]:99\nhello", 0},
+		{"caption that mentions a tag", "look at this [IMAGE] thing", 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := albumSpan(c.text); got != c.want {
+				t.Errorf("albumSpan(%q) = %d, want %d", c.text, got, c.want)
+			}
+		})
+	}
+}
+
 func TestCacheGapDetection_LargeGapIgnored(t *testing.T) {
 	cache, _ := NewCache(t.TempDir())
 

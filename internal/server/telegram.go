@@ -253,7 +253,7 @@ func (tr *TelegramReader) fetchAll(ctx context.Context, api *tg.Client) {
 		}
 
 		userNames := buildUserMap(hist)
-		msgs, err := tr.extractMessages(hist, rp.chatType, userNames)
+		msgs, err := tr.extractMessages(ctx, api, hist, rp.chatType, userNames)
 		if err != nil {
 			log.Printf("[telegram] fetch %s: extract messages failed: %v", username, err)
 			failed++
@@ -334,7 +334,7 @@ func (tr *TelegramReader) fetchChannel(ctx context.Context, api *tg.Client, user
 	}
 
 	userNames := buildUserMap(hist)
-	return tr.extractMessages(hist, protocol.ChatTypeChannel, userNames)
+	return tr.extractMessages(ctx, api, hist, protocol.ChatTypeChannel, userNames)
 }
 
 // buildUserMap extracts a user ID → display name map from a history response.
@@ -366,7 +366,7 @@ func buildUserMap(hist tg.MessagesMessagesClass) map[int64]string {
 	return m
 }
 
-func (tr *TelegramReader) extractMessages(hist tg.MessagesMessagesClass, chatType protocol.ChatType, userNames map[int64]string) ([]protocol.Message, error) {
+func (tr *TelegramReader) extractMessages(ctx context.Context, api *tg.Client, hist tg.MessagesMessagesClass, chatType protocol.ChatType, userNames map[int64]string) ([]protocol.Message, error) {
 	var tgMsgs []tg.MessageClass
 
 	switch h := hist.(type) {
@@ -380,21 +380,67 @@ func (tr *TelegramReader) extractMessages(hist tg.MessagesMessagesClass, chatTyp
 		return nil, fmt.Errorf("unexpected messages type: %T", hist)
 	}
 
-	var msgs []protocol.Message
+	// Album-aware grouping: Telegram delivers an album as N separate
+	// messages sharing the same GroupedID. We merge them into one feed
+	// message that carries every album item's media header and the album's
+	// single caption, with the lowest message ID as the canonical post id.
+	type album struct {
+		canonical *tg.Message
+		headers   []string
+		caption   string
+	}
+	groups := map[int64]*album{}
+	var order []int64
+	var nextSingleID int64 = -1 // sentinel keys for non-grouped messages
+
 	for _, raw := range tgMsgs {
 		msg, ok := raw.(*tg.Message)
 		if !ok {
 			continue
 		}
+		header, caption := tr.extractMediaHeaderAndCaption(ctx, api, msg)
+		if header == "" && caption == "" {
+			continue
+		}
+		gid := msg.GroupedID
+		if gid == 0 {
+			gid = nextSingleID
+			nextSingleID--
+		}
+		g, exists := groups[gid]
+		if !exists {
+			g = &album{canonical: msg}
+			groups[gid] = g
+			order = append(order, gid)
+		}
+		if header != "" {
+			g.headers = append(g.headers, header)
+		}
+		if caption != "" && g.caption == "" {
+			g.caption = caption
+		}
+		// Keep the canonical pointer at the lowest-id message so reply,
+		// timestamp, and ordering stay stable across album items.
+		if msg.ID < g.canonical.ID {
+			g.canonical = msg
+		}
+	}
 
-		text := tr.extractText(msg)
+	msgs := make([]protocol.Message, 0, len(order))
+	for _, gid := range order {
+		g := groups[gid]
+		text := strings.Join(g.headers, "\n")
+		if text != "" && g.caption != "" {
+			text += "\n" + g.caption
+		} else if text == "" {
+			text = g.caption
+		}
 		if text == "" {
 			continue
 		}
 
-		// For private chats, prefix with the sender's name.
 		if chatType == protocol.ChatTypePrivate {
-			if fromID, ok := msg.GetFromID(); ok {
+			if fromID, ok := g.canonical.GetFromID(); ok {
 				if pu, ok := fromID.(*tg.PeerUser); ok {
 					if name, ok := userNames[pu.UserID]; ok {
 						text = name + ": " + text
@@ -403,8 +449,7 @@ func (tr *TelegramReader) extractMessages(hist tg.MessagesMessagesClass, chatTyp
 			}
 		}
 
-		// Mark messages that are replies (include reply-to message ID).
-		if replyTo, hasReply := msg.GetReplyTo(); hasReply {
+		if replyTo, hasReply := g.canonical.GetReplyTo(); hasReply {
 			if rh, ok := replyTo.(*tg.MessageReplyHeader); ok {
 				if rid, hasID := rh.GetReplyToMsgID(); hasID {
 					text = fmt.Sprintf("%s:%d\n%s", protocol.MediaReply, rid, text)
@@ -417,13 +462,48 @@ func (tr *TelegramReader) extractMessages(hist tg.MessagesMessagesClass, chatTyp
 		}
 
 		msgs = append(msgs, protocol.Message{
-			ID:        uint32(msg.ID),
-			Timestamp: uint32(msg.Date),
+			ID:        uint32(g.canonical.ID),
+			Timestamp: uint32(g.canonical.Date),
 			Text:      text,
 		})
 	}
 
 	return msgs, nil
+}
+
+// extractMediaHeaderAndCaption returns the [TAG]<meta> header line (if any)
+// and the human caption for a single Telegram message. Used by the album
+// merger to combine N messages into one feed message with multiple headers.
+// Polls remain inline because they're never grouped into albums.
+func (tr *TelegramReader) extractMediaHeaderAndCaption(ctx context.Context, api *tg.Client, msg *tg.Message) (header, caption string) {
+	caption = applyTextURLEntities(msg.Message, msg.Entities)
+	if msg.Media == nil {
+		return "", caption
+	}
+	switch m := msg.Media.(type) {
+	case *tg.MessageMediaPhoto, *tg.MessageMediaDocument:
+		if meta, ok := tr.downloadTelegramMedia(ctx, api, msg); ok {
+			header = strings.TrimSuffix(meta.String(), "\n")
+			return header, caption
+		}
+		// Non-downloadable image/doc: fall back to legacy [TAG] tag only.
+		if _, ok := m.(*tg.MessageMediaPhoto); ok {
+			return protocol.MediaImage, caption
+		}
+		if d, ok := m.(*tg.MessageMediaDocument); ok {
+			return tr.classifyDocument(d), caption
+		}
+	case *tg.MessageMediaGeo, *tg.MessageMediaGeoLive, *tg.MessageMediaVenue:
+		return protocol.MediaLocation, caption
+	case *tg.MessageMediaContact:
+		return protocol.MediaContact, caption
+	case *tg.MessageMediaPoll:
+		// Polls render with a synthesised body that's not a normal caption;
+		// keep the legacy single-message behaviour by returning the whole
+		// payload as the "caption" with no header.
+		return "", tr.extractText(msg)
+	}
+	return "", caption
 }
 
 func (tr *TelegramReader) extractText(msg *tg.Message) string {

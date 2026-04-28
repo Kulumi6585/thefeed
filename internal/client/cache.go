@@ -238,25 +238,93 @@ func (c *Cache) Cleanup() error {
 	return nil
 }
 
-// detectGaps finds places in a sorted message list where consecutive IDs differ
-// by more than 1. Gaps larger than 500 are ignored (natural Telegram numbering).
-// Returns nil when there are fewer than 10 messages (not enough history to judge).
+// detectGaps finds runs of missing IDs between consecutive messages. Album-
+// merged canonicals cover a contiguous span of sibling IDs (counted via
+// albumSpan), so absorbed siblings don't show up as fake gaps. Diffs > 500
+// are ignored (natural Telegram numbering jumps); under 10 messages we don't
+// have enough history to judge.
 func detectGaps(msgs []protocol.Message) []Gap {
 	if len(msgs) < 10 {
 		return nil
 	}
 	var gaps []Gap
 	for i := 1; i < len(msgs); i++ {
-		prev, cur := msgs[i-1].ID, msgs[i].ID
-		if diff := cur - prev; diff > 1 && diff <= 500 {
-			gaps = append(gaps, Gap{
-				AfterID:  prev,
-				BeforeID: cur,
-				Count:    int(diff - 1),
-			})
+		prev, cur := msgs[i-1], msgs[i]
+		span := uint32(albumSpan(prev.Text))
+		if span == 0 {
+			span = 1
 		}
+		expectedNext := prev.ID + span
+		if cur.ID <= expectedNext {
+			continue
+		}
+		diff := cur.ID - expectedNext
+		if diff > 500 {
+			continue
+		}
+		gaps = append(gaps, Gap{
+			AfterID:  expectedNext - 1,
+			BeforeID: cur.ID,
+			Count:    int(diff),
+		})
 	}
 	return gaps
+}
+
+// mediaHeaderTags are the leading [TAG] markers extractMessages may stack
+// at the start of a canonical message body — one per absorbed album item.
+var mediaHeaderTags = []string{
+	protocol.MediaImage,
+	protocol.MediaVideo,
+	protocol.MediaFile,
+	protocol.MediaAudio,
+	protocol.MediaSticker,
+	protocol.MediaGIF,
+	protocol.MediaLocation,
+	protocol.MediaContact,
+}
+
+// albumSpan counts the leading media-header lines in a canonical body — 0
+// for plain text, 1 for a single media item, N for an N-item album. A
+// leading [REPLY]... line is skipped first.
+func albumSpan(text string) int {
+	if strings.HasPrefix(text, protocol.MediaReply) {
+		nl := strings.IndexByte(text, '\n')
+		if nl < 0 {
+			return 0
+		}
+		text = text[nl+1:]
+	}
+	n := 0
+	for _, line := range strings.Split(text, "\n") {
+		if !isMediaHeaderLine(line) {
+			break
+		}
+		n++
+	}
+	return n
+}
+
+// isMediaHeaderLine matches both the bare [TAG] form and the downloadable
+// "[TAG]<digit>..." form. Caption text that happens to start with "[IMAGE]"
+// is rejected because rest[0] won't be a digit.
+func isMediaHeaderLine(line string) bool {
+	for _, tag := range mediaHeaderTags {
+		if line == tag {
+			return true
+		}
+		if !strings.HasPrefix(line, tag) {
+			continue
+		}
+		rest := line[len(tag):]
+		if rest == "" {
+			return true
+		}
+		if rest[0] >= '0' && rest[0] <= '9' {
+			return true
+		}
+	}
+	return false
 }
 
 // channelPath returns the file path for a channel's cache, keyed by sanitised name.

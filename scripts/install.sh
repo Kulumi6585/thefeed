@@ -75,6 +75,48 @@ get_latest_version() {
     echo "$version"
 }
 
+_fetch_releases() {
+    local body
+    body=$(curl -Ls "https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=20")
+    if [[ -z "$body" ]]; then
+        body=$(curl -4 -Ls "https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=20")
+    fi
+    echo "$body"
+}
+
+# Normalise GitHub JSON (pretty or minified) to one release object per line.
+_split_releases() {
+    _fetch_releases | tr -d '\n' | sed 's/{/\n{/g'
+}
+
+get_latest_prerelease() {
+    _split_releases \
+        | grep -F '"prerelease":true' \
+        | head -1 \
+        | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/'
+}
+
+list_versions() {
+    echo -e "${green}Recent thefeed releases (most recent first):${plain}"
+    local line tag label
+    while IFS= read -r line; do
+        case "$line" in
+            *'"tag_name"'*) ;;
+            *) continue ;;
+        esac
+        tag=$(echo "$line" | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')
+        if echo "$line" | grep -qF '"prerelease":true'; then
+            label="[pre-release]"
+        else
+            label="[stable]"
+        fi
+        printf "  %-15s %s\n" "$tag" "$label"
+    done < <(_split_releases)
+    echo ""
+    echo -e "Install one with: ${blue}sudo bash install.sh --version <tag>${plain}"
+    echo -e "Or:               ${blue}sudo bash install.sh <tag>${plain} (positional)"
+}
+
 download_binary() {
     local version="$1"
     local arch_name
@@ -484,15 +526,28 @@ show_usage() {
 
 install_thefeed() {
     local version="$1"
+    local channel="${2:-stable}"  # "stable" or "pre"
 
-    # Get version
     if [[ -z "$version" ]]; then
-        version=$(get_latest_version)
-        if [[ -z "$version" ]]; then
-            echo -e "${red}Failed to fetch latest version from GitHub${plain}"
-            echo -e "${yellow}Please check your network or specify a version: bash install.sh v1.0.0${plain}"
-            exit 1
+        if [[ "$channel" == "pre" ]]; then
+            version=$(get_latest_prerelease)
+            if [[ -z "$version" ]]; then
+                echo -e "${red}No pre-release found on GitHub${plain}"
+                echo -e "${yellow}Run: bash install.sh --list  to see available versions${plain}"
+                exit 1
+            fi
+            echo -e "${yellow}Channel:${plain} ${blue}pre-release${plain}"
+        else
+            version=$(get_latest_version)
+            if [[ -z "$version" ]]; then
+                echo -e "${red}Failed to fetch latest version from GitHub${plain}"
+                echo -e "${yellow}Please check your network or specify a version: bash install.sh --version v1.0.0${plain}"
+                exit 1
+            fi
         fi
+    fi
+    if [[ "$version" =~ ^[0-9] ]]; then
+        version="v${version}"
     fi
     echo -e "Version: ${green}${version}${plain}"
 
@@ -586,36 +641,88 @@ show_help() {
     echo -e "Usage: bash $0 [OPTION]"
     echo ""
     echo -e "Options:"
-    echo -e "  ${green}(no args)${plain}       Install or update to latest version"
-    echo -e "  ${green}v1.0.0${plain}          Install specific version"
-    echo -e "  ${green}--login${plain}         Re-authenticate with Telegram"
-    echo -e "  ${green}--uninstall${plain}     Remove thefeed"
-    echo -e "  ${green}--help${plain}          Show this help"
+    echo -e "  ${green}(no args)${plain}              Install or update to latest stable version"
+    echo -e "  ${green}--version <tag>${plain}        Install a specific version (rollback, beta, rc)"
+    echo -e "  ${green}-v <tag>${plain}               Short form of --version"
+    echo -e "  ${green}<tag>${plain}                  Positional form, e.g.  bash install.sh v1.0.0"
+    echo -e "  ${green}--pre${plain}                  Install the latest pre-release (beta/rc)"
+    echo -e "  ${green}--list${plain}                 List recent releases with stable/pre labels"
+    echo -e "  ${green}--login${plain}                Re-authenticate with Telegram"
+    echo -e "  ${green}--uninstall${plain}            Remove thefeed"
+    echo -e "  ${green}--help${plain}                 Show this help"
+    echo ""
+    echo -e "Examples:"
+    echo -e "  Roll back:       ${blue}sudo bash install.sh --version v0.9.2${plain}"
+    echo -e "  Install beta:    ${blue}sudo bash install.sh --pre${plain}"
+    echo -e "  Specific tag:    ${blue}sudo bash install.sh --version v1.2.0-rc1${plain}"
+    echo -e "  See available:   ${blue}sudo bash install.sh --list${plain}"
     echo ""
     echo -e "No-Telegram mode (recommended for most users):"
     echo -e "  Reads public Telegram channels without needing Telegram credentials."
     echo -e "  Safer because no phone number or API keys are stored on the server."
     echo ""
     echo -e "Quick commands:"
-    echo -e "  Install/Update: ${blue}curl -Ls https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install.sh | sudo bash${plain}"
-    echo -e "  Uninstall:      ${blue}curl -Ls https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install.sh | sudo bash -s -- --uninstall${plain}"
+    echo -e "  Install/Update:  ${blue}curl -Ls https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install.sh | sudo bash${plain}"
+    echo -e "  Install beta:    ${blue}curl -Ls https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install.sh | sudo bash -s -- --pre${plain}"
+    echo -e "  Roll back:       ${blue}curl -Ls https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install.sh | sudo bash -s -- --version v0.9.2${plain}"
+    echo -e "  Uninstall:       ${blue}curl -Ls https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install.sh | sudo bash -s -- --uninstall${plain}"
 }
 
 # Main
 echo -e "${green}Running thefeed installer...${plain}"
 
-case "${1:-}" in
-    --help | -h)
-        show_help
-        ;;
-    --login)
-        login_only
-        ;;
-    --uninstall)
-        uninstall_thefeed
-        ;;
-    *)
+# Flags: --version <tag> / -v <tag> / positional <tag>, --pre, --list,
+# --login, --uninstall, --help. No args = latest stable.
+REQUEST_VERSION=""
+REQUEST_CHANNEL="stable"
+ACTION="install"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --help|-h)
+            ACTION="help"; shift ;;
+        --login)
+            ACTION="login"; shift ;;
+        --uninstall)
+            ACTION="uninstall"; shift ;;
+        --list)
+            ACTION="list"; shift ;;
+        --pre|--prerelease|--beta)
+            REQUEST_CHANNEL="pre"; shift ;;
+        --version|-v)
+            shift
+            if [[ -z "${1:-}" ]]; then
+                echo -e "${red}--version requires a tag argument (e.g. --version v1.0.0)${plain}"
+                exit 1
+            fi
+            REQUEST_VERSION="$1"; shift ;;
+        --version=*)
+            REQUEST_VERSION="${1#*=}"; shift ;;
+        --)
+            shift; break ;;
+        -*)
+            echo -e "${red}Unknown flag: $1${plain}"
+            echo -e "Run ${blue}bash $0 --help${plain} for usage"
+            exit 1 ;;
+        *)
+            # Positional tag, e.g. bash install.sh v1.0.0
+            if [[ -z "$REQUEST_VERSION" ]]; then
+                REQUEST_VERSION="$1"
+            fi
+            shift ;;
+    esac
+done
+
+case "$ACTION" in
+    help)
+        show_help ;;
+    login)
+        login_only ;;
+    uninstall)
+        uninstall_thefeed ;;
+    list)
+        list_versions ;;
+    install)
         install_base
-        install_thefeed "$1"
-        ;;
+        install_thefeed "$REQUEST_VERSION" "$REQUEST_CHANNEL" ;;
 esac

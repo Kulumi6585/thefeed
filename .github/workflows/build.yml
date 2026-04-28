@@ -83,7 +83,15 @@ jobs:
           DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           LDFLAGS="-s -w -X github.com/sartoopjj/thefeed/internal/version.Version=${VERSION} -X github.com/sartoopjj/thefeed/internal/version.Commit=${COMMIT} -X github.com/sartoopjj/thefeed/internal/version.Date=${DATE}"
           ext=""
+          BUILD_MODE=""
           if [ "${{ matrix.goos }}" = "windows" ]; then ext=".exe"; fi
+          # Modern Android requires PIE for executables launched via exec(),
+          # and several heuristic AV engines (Kaspersky Boogr.gsh,
+          # several VT vendors) flag non-PIE bundled binaries as suspicious.
+          # Force PIE for the binaries that ship inside the APK.
+          if [ "${{ matrix.goos }}" = "android" ] || [ "${{ matrix.android_arm }}" = "true" ]; then
+            BUILD_MODE="-buildmode=pie"
+          fi
           if [ "${{ matrix.goos }}" = "android" ] && [ "${{ matrix.goarch }}" = "arm64" ]; then
             out="build/thefeed-client-android-arm64"
           elif [ "${{ matrix.android_arm }}" = "true" ]; then
@@ -91,7 +99,7 @@ jobs:
           else
             out="build/thefeed-client-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}${ext}"
           fi
-          go build -trimpath -ldflags="${LDFLAGS}" -o "$out" ./cmd/client
+          go build -trimpath -buildvcs=false $BUILD_MODE -ldflags="${LDFLAGS}" -o "$out" ./cmd/client
 
       - name: Compress with UPX
         if: (matrix.goos == 'linux' || matrix.goos == 'windows') && !matrix.android_arm
@@ -123,11 +131,11 @@ jobs:
       - name: Stage Android client binary as JNI library
         run: |
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          # mkdir -p android/app/src/main/jniLibs/armeabi-v7a
+          mkdir -p android/app/src/main/jniLibs/armeabi-v7a
           test -f artifacts/thefeed-client-android-arm64
-          # test -f artifacts/thefeed-client-android-arm
+          test -f artifacts/thefeed-client-android-arm
           cp artifacts/thefeed-client-android-arm64 android/app/src/main/jniLibs/arm64-v8a/libthefeed.so
-          # cp artifacts/thefeed-client-android-arm android/app/src/main/jniLibs/armeabi-v7a/libthefeed.so
+          cp artifacts/thefeed-client-android-arm android/app/src/main/jniLibs/armeabi-v7a/libthefeed.so
 
       - name: Decode signing keystore
         env:
@@ -163,9 +171,8 @@ jobs:
           ./gradlew --no-daemon clean $TASK
 
           APK_DIR=app/build/outputs/apk/$BT
-          cp "$APK_DIR"/app-arm64-v8a-${BT}.apk   ../artifacts/thefeed-android-${VERSION}-arm64.apk
-          # cp "$APK_DIR"/app-armeabi-v7a-${BT}.apk  ../artifacts/thefeed-android-${VERSION}-arm.apk
-          # cp "$APK_DIR"/app-universal-${BT}.apk     ../artifacts/thefeed-android-${VERSION}-universal.apk
+          cp "$APK_DIR"/app-arm64-v8a-${BT}.apk    ../artifacts/thefeed-android-${VERSION}-arm64.apk
+          cp "$APK_DIR"/app-armeabi-v7a-${BT}.apk  ../artifacts/thefeed-android-${VERSION}-arm.apk
 
       - name: Upload Android APK artifacts
         uses: actions/upload-artifact@v4
@@ -173,8 +180,7 @@ jobs:
           name: thefeed-android-apk
           path: |
             artifacts/thefeed-android-*-arm64.apk
-            # artifacts/thefeed-android-*-arm.apk
-            # artifacts/thefeed-android-*-universal.apk
+            artifacts/thefeed-android-*-arm.apk
 
   release:
     needs: [build, android-apk]
@@ -207,3 +213,4 @@ jobs:
             | FreeBSD | arm64 | [server-سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-freebsd-arm64) / [client-کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-${{ github.ref_name }}-freebsd-arm64) |
             | Windows | amd64 | [server-سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-windows-amd64.exe) / [client-کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-${{ github.ref_name }}-windows-amd64.exe) |
             | Android | arm64 (v8a) | [thefeed-android-${{ github.ref_name }}-arm64.apk - اندروید](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-android-${{ github.ref_name }}-arm64.apk) |
+            | Android | arm (v7a)   | [thefeed-android-${{ github.ref_name }}-arm.apk - اندروید (دستگاه‌های قدیمی‌تر)](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-android-${{ github.ref_name }}-arm.apk) |

@@ -172,11 +172,77 @@ func (pr *PublicReader) fetchChannel(ctx context.Context, username string) ([]pr
 	if err != nil {
 		return nil, "", err
 	}
-	msgs, err := parsePublicMessages(body)
+	msgs, sources, err := parsePublicMessagesWithMedia(body)
 	if err != nil {
 		return nil, "", err
 	}
+	// If the server has a configured media cache, fetch each scraped image
+	// URL and rewrite the corresponding message text to embed downloadable
+	// metadata. Failures here are best-effort: messages keep their legacy
+	// "[IMAGE]\ncaption" body when downloads don't succeed.
+	if cache := pr.feed.MediaCache(); cache != nil {
+		applyHTTPMediaSources(ctx, cache, msgs, sources)
+	}
 	return msgs, extractChannelTitle(body), nil
+}
+
+// applyHTTPMediaSources downloads each src.url (+ extraURLs for albums) and
+// rewrites the matching message body with N stacked downloadable metadata
+// lines. Failed downloads emit a bare [TAG] so the album's ID span is
+// preserved.
+func applyHTTPMediaSources(ctx context.Context, cache *MediaCache, msgs []protocol.Message, sources []mediaSource) {
+	for i := range msgs {
+		if i >= len(sources) {
+			break
+		}
+		src := sources[i]
+		if src.url == "" || src.tag == "" {
+			continue
+		}
+		// Strip every leading [TAG] header so we can re-emit clean metadata
+		// (ParseMediaText only peels one tag per call).
+		body := msgs[i].Text
+		for {
+			_, rest, parsed := protocol.ParseMediaText(body)
+			if !parsed {
+				break
+			}
+			body = rest
+		}
+		caption := body
+
+		urls := append([]string{src.url}, src.extraURLs...)
+		var encoded strings.Builder
+		downloaded := 0
+		for j, u := range urls {
+			meta, ok := downloadHTTPMedia(ctx, cache, src.tag, u)
+			if j > 0 {
+				encoded.WriteByte('\n')
+			}
+			if !ok {
+				encoded.WriteString(src.tag)
+				continue
+			}
+			downloaded++
+			encoded.WriteString(strings.TrimSuffix(meta.String(), "\n"))
+		}
+		if downloaded == 0 {
+			continue
+		}
+		newText := encoded.String()
+		if caption != "" {
+			newText += "\n" + caption
+		}
+		msgs[i].Text = newText
+	}
+}
+
+// mediaSource is the per-message media descriptor returned by the public
+// scraper. extraURLs holds additional album siblings; url is the first one.
+type mediaSource struct {
+	tag       string
+	url       string
+	extraURLs []string
 }
 
 // extractChannelTitle parses the channel display name from the Telegram public page.
@@ -219,12 +285,27 @@ func mergeMessages(old, new []protocol.Message) []protocol.Message {
 }
 
 func parsePublicMessages(body []byte) ([]protocol.Message, error) {
+	msgs, _, err := parsePublicMessagesWithMedia(body)
+	return msgs, err
+}
+
+// parsePublicMessagesWithMedia is identical to parsePublicMessages but also
+// returns a per-message media descriptor — same length and ordering as the
+// returned messages — that callers can use to fetch the underlying photo or
+// document over HTTP and rewrite the message body. The legacy behaviour
+// (returning just messages) is preserved by parsePublicMessages above for
+// existing tests and pre-feature callers.
+func parsePublicMessagesWithMedia(body []byte) ([]protocol.Message, []mediaSource, error) {
 	doc, err := html.Parse(strings.NewReader(string(body)))
 	if err != nil {
-		return nil, fmt.Errorf("parse html: %w", err)
+		return nil, nil, fmt.Errorf("parse html: %w", err)
 	}
 
-	var collected []publicMessage
+	type collectedMsg struct {
+		msg publicMessage
+		src mediaSource
+	}
+	var collected []collectedMsg
 	visitNodes(doc, func(n *html.Node) {
 		post := attrValue(n, "data-post")
 		if post == "" {
@@ -235,17 +316,42 @@ func parsePublicMessages(body []byte) ([]protocol.Message, error) {
 			return
 		}
 		text := strings.TrimSpace(extractMessageText(findMessageBodyNode(n)))
+		var src mediaSource
 		mediaPrefix := ""
 		switch {
 		case findFirstByClass(n, "tgme_widget_message_photo_wrap") != nil:
-			mediaPrefix = protocol.MediaImage
+			// Albums share one data-post block with N nested photo wraps.
+			// Stack N [IMAGE] headers so the client-side gap detector
+			// (albumSpan) doesn't flag the absorbed sibling IDs as missing.
+			photoWraps := findAllByClass(n, "tgme_widget_message_photo_wrap")
+			if len(photoWraps) > 1 {
+				headers := make([]string, len(photoWraps))
+				for i := range headers {
+					headers[i] = protocol.MediaImage
+				}
+				mediaPrefix = strings.Join(headers, "\n")
+			} else {
+				mediaPrefix = protocol.MediaImage
+			}
+			src = mediaSource{tag: protocol.MediaImage, url: extractBackgroundImageURL(photoWraps[0])}
+			for i := 1; i < len(photoWraps); i++ {
+				if u := extractBackgroundImageURL(photoWraps[i]); u != "" {
+					src.extraURLs = append(src.extraURLs, u)
+				}
+			}
 		case findFirstByClass(n, "tgme_widget_message_video_player") != nil ||
 			findFirstByClass(n, "tgme_widget_message_roundvideo_player") != nil:
 			mediaPrefix = protocol.MediaVideo
+			// t.me/s/ does not serve real video bytes — the player anchor links
+			// to the channel page itself. Don't try to download.
 		case findFirstByClass(n, "tgme_widget_message_sticker_wrap") != nil:
 			mediaPrefix = protocol.MediaSticker
+			// Stickers are emitted as the legacy tag only; we don't cache or
+			// serve their bytes (animated/.tgs variants don't render inline
+			// in the browser anyway).
 		case findFirstByClass(n, "tgme_widget_message_voice") != nil:
 			mediaPrefix = protocol.MediaAudio
+			// Public web view doesn't expose voice file bytes either.
 		case findFirstByClass(n, "tgme_widget_message_poll") != nil:
 			mediaPrefix = protocol.MediaPoll
 			pollBody := extractPollData(n)
@@ -264,6 +370,10 @@ func parsePublicMessages(body []byte) ([]protocol.Message, error) {
 			mediaPrefix = protocol.MediaContact
 		case findFirstByClass(n, "tgme_widget_message_document_wrap") != nil:
 			mediaPrefix = protocol.MediaFile
+			// In t.me/s/ the document link is a "view in Telegram" page link,
+			// not the file CDN — fetching it would download the channel HTML.
+			// Skip; documents are downloadable only when the server runs with
+			// a Telegram login (gotd UploadGetFile path).
 		case findFirstByClass(n, "message_media_not_supported") != nil:
 			// Telegram shows "Please open Telegram to view this post" for
 			// content the public web view can't render: polls/quizzes, but
@@ -294,26 +404,31 @@ func parsePublicMessages(body []byte) ([]protocol.Message, error) {
 				text = protocol.MediaReply + "\n" + text
 			}
 		}
-		collected = append(collected, publicMessage{
-			id:        id,
-			timestamp: extractMessageTimestamp(n),
-			text:      text,
+		collected = append(collected, collectedMsg{
+			msg: publicMessage{
+				id:        id,
+				timestamp: extractMessageTimestamp(n),
+				text:      text,
+			},
+			src: src,
 		})
 	})
 
 	if len(collected) == 0 {
-		return nil, fmt.Errorf("no public messages found")
+		return nil, nil, fmt.Errorf("no public messages found")
 	}
 
 	sort.Slice(collected, func(i, j int) bool {
-		return collected[i].id > collected[j].id
+		return collected[i].msg.id > collected[j].msg.id
 	})
 
 	msgs := make([]protocol.Message, 0, len(collected))
-	for _, msg := range collected {
-		msgs = append(msgs, protocol.Message{ID: msg.id, Timestamp: msg.timestamp, Text: msg.text})
+	sources := make([]mediaSource, 0, len(collected))
+	for _, c := range collected {
+		msgs = append(msgs, protocol.Message{ID: c.msg.id, Timestamp: c.msg.timestamp, Text: c.msg.text})
+		sources = append(sources, c.src)
 	}
-	return msgs, nil
+	return msgs, sources, nil
 }
 
 func visitNodes(n *html.Node, fn func(*html.Node)) {
@@ -334,6 +449,17 @@ func findFirstByClass(n *html.Node, class string) *html.Node {
 		}
 		if hasClass(cur, class) {
 			found = cur
+		}
+	})
+	return found
+}
+
+// findAllByClass returns every descendant of n that carries the given class.
+func findAllByClass(n *html.Node, class string) []*html.Node {
+	var found []*html.Node
+	visitNodes(n, func(cur *html.Node) {
+		if hasClass(cur, class) {
+			found = append(found, cur)
 		}
 	})
 	return found
@@ -578,3 +704,40 @@ func extractReplyID(replyNode *html.Node) uint32 {
 	}
 	return id
 }
+
+// extractBackgroundImageURL pulls the URL out of an inline
+// `style="background-image:url('...')"` attribute. Telegram's public photo
+// widget uses this pattern to render thumbnails — the URL points to the
+// CDN-hosted image and is the source we want to download. Returns an empty
+// string when the pattern is not present.
+func extractBackgroundImageURL(n *html.Node) string {
+	if n == nil {
+		return ""
+	}
+	style := attrValue(n, "style")
+	if style == "" {
+		return ""
+	}
+	idx := strings.Index(style, "background-image")
+	if idx < 0 {
+		return ""
+	}
+	// Find url(...) after the property name.
+	rest := style[idx:]
+	open := strings.Index(rest, "url(")
+	if open < 0 {
+		return ""
+	}
+	rest = rest[open+len("url("):]
+	close := strings.IndexByte(rest, ')')
+	if close < 0 {
+		return ""
+	}
+	raw := strings.TrimSpace(rest[:close])
+	raw = strings.TrimPrefix(raw, "'")
+	raw = strings.TrimSuffix(raw, "'")
+	raw = strings.TrimPrefix(raw, "\"")
+	raw = strings.TrimSuffix(raw, "\"")
+	return raw
+}
+

@@ -49,11 +49,30 @@ type Config struct {
 }
 
 // Profile wraps a Config with a user-chosen nickname and a unique ID.
+// AutoUpdate is the per-profile list of channel usernames the auto-update
+// goroutine should refresh; AutoUpdateInterval (seconds, 0 → default) sets
+// the cadence.
 type Profile struct {
-	ID       string `json:"id"`
-	Nickname string `json:"nickname"`
-	Config   Config `json:"config"`
+	ID                 string   `json:"id"`
+	Nickname           string   `json:"nickname"`
+	Config             Config   `json:"config"`
+	AutoUpdate         []string `json:"autoUpdate,omitempty"`
+	AutoUpdateInterval int      `json:"autoUpdateInterval,omitempty"`
 }
+
+const (
+	// minAutoUpdateInterval is the floor — never tick faster than once per
+	// minute, even if the user sets something silly. The DNS path is
+	// expensive and the server's own fetch cycle is much longer.
+	minAutoUpdateInterval = 60 * time.Second
+	// serverFetchSettleDelay is how long after nextFetch we wait before
+	// asking the server for fresh data — gives it time to process the
+	// upstream Telegram fetch and have a coherent metadata snapshot.
+	serverFetchSettleDelay = 30 * time.Second
+	// autoUpdateStartupDelay defers the first tick so the initial metadata
+	// + resolver checks have a chance to land before we start polling.
+	autoUpdateStartupDelay = 30 * time.Second
+)
 
 // SavedResolverScore stores persistent resolver performance data.
 type SavedResolverScore struct {
@@ -137,6 +156,17 @@ type Server struct {
 	titlesMu           sync.Mutex
 	titlesLoading      bool
 	titlesBackoffUntil time.Time
+
+	// dlMu guards dlProgress. Active media downloads register their block
+	// counter here so the frontend can poll /api/media/progress and show
+	// per-block updates instead of waiting for byte chunks.
+	dlMu       sync.Mutex
+	dlProgress map[string]*mediaDLProgress
+
+	// mediaCache is a disk-backed store for downloaded media bytes so that
+	// multiple devices on the same network share a single DNS-tunnelled
+	// fetch. Entries expire after 7 days.
+	mediaCache *mediaDiskCache
 }
 
 // New creates a new web server.
@@ -154,6 +184,11 @@ func New(dataDir string, port int, host string, password string) (*Server, error
 
 	scanner := client.NewResolverScanner()
 
+	mediaCache, mcErr := newMediaDiskCache(filepath.Join(dataDir, "media-cache"), 7*24*time.Hour)
+	if mcErr != nil {
+		log.Printf("Warning: media disk cache disabled: %v", mcErr)
+	}
+
 	s := &Server{
 		dataDir:        dataDir,
 		port:           port,
@@ -165,6 +200,13 @@ func New(dataDir string, port int, host string, password string) (*Server, error
 		lastMsgIDs:     make(map[int]uint32),
 		lastHashes:     make(map[int]uint32),
 		scanner:        scanner,
+		mediaCache:     mediaCache,
+		dlProgress:     make(map[string]*mediaDLProgress),
+	}
+
+	if mediaCache != nil {
+		go mediaCache.Cleanup()
+		go s.runMediaCacheSweep()
 	}
 
 	// Migrate per-profile resolvers into the shared bank on first run.
@@ -213,6 +255,8 @@ func (s *Server) Run() error {
 	mux.HandleFunc("/api/events", s.handleSSE)
 	mux.HandleFunc("/api/profiles", s.handleProfiles)
 	mux.HandleFunc("/api/profiles/switch", s.handleProfileSwitch)
+	mux.HandleFunc("/api/auto-update", s.handleAutoUpdate)
+	mux.HandleFunc("/api/auto-update/toggle", s.handleAutoUpdateToggle)
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/version-check", s.handleVersionCheck)
 	mux.HandleFunc("/api/cache/clear", s.handleClearCache)
@@ -230,6 +274,11 @@ func (s *Server) Run() error {
 	mux.HandleFunc("/api/scanner/progress", s.handleScannerProgress)
 	mux.HandleFunc("/api/scanner/apply", s.handleScannerApply)
 	mux.HandleFunc("/api/scanner/presets", s.handleScannerPresets)
+	// Media (image/file) downloader: assembles a binary blob from a media
+	// channel and streams it back. See internal/web/media.go for the param
+	// contract.
+	mux.HandleFunc("/api/media/get", s.handleMediaGet)
+	mux.HandleFunc("/api/media/progress", s.handleMediaProgress)
 	mux.HandleFunc("/", s.handleIndex)
 
 	// Listen on the specified host (default 127.0.0.1)
@@ -782,7 +831,138 @@ func (s *Server) initFetcher() error {
 	s.fetcher = fetcher
 	s.cache = cache
 	go cache.Cleanup() // remove channel files not updated in 7 days
+
+	// Goroutine dies with fetcherCtx, so a profile switch / config change
+	// stops it cleanly.
+	go s.runAutoUpdateLoop(ctx)
 	return nil
+}
+
+// runAutoUpdateLoop refreshes the active profile's AutoUpdate channels on a
+// schedule that follows the server's own fetch cycle — there's no point
+// polling more often than the server actually pulls fresh data from
+// Telegram. User-set Profile.AutoUpdateInterval is honoured if it's >= the
+// 60s floor; otherwise we align with nextFetch + settle delay.
+func (s *Server) runAutoUpdateLoop(ctx context.Context) {
+	select {
+	case <-time.After(autoUpdateStartupDelay):
+	case <-ctx.Done():
+		return
+	}
+
+	var lastTick time.Time
+	for {
+		wait := s.nextAutoUpdateWait(lastTick)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+		if !s.canAutoUpdate() {
+			continue
+		}
+		s.tickAutoUpdate()
+		lastTick = time.Now()
+	}
+}
+
+// nextAutoUpdateWait returns how long to sleep before the next tick. Honours
+// user override when set sensibly; otherwise sleeps until just after the
+// server's next Telegram fetch so we always pull just-refreshed data.
+func (s *Server) nextAutoUpdateWait(lastTick time.Time) time.Duration {
+	pl, _ := s.loadProfiles()
+	if pl != nil && pl.Active != "" {
+		for _, p := range pl.Profiles {
+			if p.ID != pl.Active {
+				continue
+			}
+			if p.AutoUpdateInterval > 0 {
+				user := time.Duration(p.AutoUpdateInterval) * time.Second
+				if user < minAutoUpdateInterval {
+					user = minAutoUpdateInterval
+				}
+				return user
+			}
+			break
+		}
+	}
+
+	s.mu.RLock()
+	nf := s.nextFetch
+	s.mu.RUnlock()
+	if nf == 0 {
+		return minAutoUpdateInterval
+	}
+	target := time.Unix(int64(nf), 0).Add(serverFetchSettleDelay)
+	delay := time.Until(target)
+	if delay < minAutoUpdateInterval {
+		delay = minAutoUpdateInterval
+	}
+	if !lastTick.IsZero() {
+		if since := time.Since(lastTick); since < minAutoUpdateInterval {
+			if rem := minAutoUpdateInterval - since; rem > delay {
+				delay = rem
+			}
+		}
+	}
+	return delay
+}
+
+// canAutoUpdate returns false when we should skip a tick: server hasn't
+// produced metadata yet (channel list empty), or the resolver scanner is
+// busy (it'd race with our DNS fetches), or there's no fetcher.
+func (s *Server) canAutoUpdate() bool {
+	s.mu.RLock()
+	channels := s.channels
+	fetcher := s.fetcher
+	scanner := s.scanner
+	s.mu.RUnlock()
+	if fetcher == nil || len(channels) == 0 {
+		return false
+	}
+	if scanner != nil {
+		switch scanner.State() {
+		case client.ScannerRunning, client.ScannerPaused:
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) tickAutoUpdate() {
+	pl, err := s.loadProfiles()
+	if err != nil || pl == nil || pl.Active == "" {
+		return
+	}
+	var watch []string
+	for _, p := range pl.Profiles {
+		if p.ID == pl.Active {
+			watch = p.AutoUpdate
+			break
+		}
+	}
+	if len(watch) == 0 {
+		return
+	}
+
+	s.mu.RLock()
+	channels := s.channels
+	s.mu.RUnlock()
+	if len(channels) == 0 {
+		return
+	}
+
+	wantSet := make(map[string]bool, len(watch))
+	for _, name := range watch {
+		wantSet[strings.TrimPrefix(strings.TrimSpace(name), "@")] = true
+	}
+
+	for i, ch := range channels {
+		if !wantSet[ch.Name] {
+			continue
+		}
+		go s.refreshChannel(i + 1) // 1-indexed
+	}
 }
 
 func (s *Server) checkLatestVersion(ctx context.Context) (string, error) {
@@ -1961,6 +2141,10 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 						addToBank(pl, req.Profile.Config.Resolvers)
 						req.Profile.Config.Resolvers = nil
 					}
+					// Carry over fields the edit-profile UI doesn't manage so
+					// they don't get wiped on save (auto-update list etc.).
+					req.Profile.AutoUpdate = p.AutoUpdate
+					req.Profile.AutoUpdateInterval = p.AutoUpdateInterval
 					pl.Profiles[i] = req.Profile
 					if p.ID == pl.Active {
 						needsReinit = true
@@ -2097,6 +2281,164 @@ func (s *Server) handleProfileSwitch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true})
 }
 
+// handleAutoUpdate exposes the active profile's auto-update channel list.
+// GET → {channels, intervalSeconds, defaultIntervalSeconds}.
+// POST {channels, intervalSeconds?} replaces both. Names are stripped and
+// dedup'd before saving.
+func (s *Server) handleAutoUpdate(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		pl, _ := s.loadProfiles()
+		channels := []string{}
+		interval := 0
+		if pl != nil && pl.Active != "" {
+			for _, p := range pl.Profiles {
+				if p.ID == pl.Active {
+					if p.AutoUpdate != nil {
+						channels = p.AutoUpdate
+					}
+					interval = p.AutoUpdateInterval
+					break
+				}
+			}
+		}
+		writeJSON(w, map[string]any{
+			"channels":               channels,
+			"intervalSeconds":        interval,
+			"defaultIntervalSeconds": int(minAutoUpdateInterval / time.Second),
+		})
+
+	case http.MethodPost:
+		var req struct {
+			Channels        []string `json:"channels"`
+			IntervalSeconds *int     `json:"intervalSeconds,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON", 400)
+			return
+		}
+		pl, err := s.loadProfiles()
+		if err != nil || pl == nil || pl.Active == "" {
+			http.Error(w, "no active profile", 400)
+			return
+		}
+		idx := -1
+		for i, p := range pl.Profiles {
+			if p.ID == pl.Active {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			http.Error(w, "active profile not found", 400)
+			return
+		}
+		pl.Profiles[idx].AutoUpdate = normaliseAutoUpdateList(req.Channels)
+		if req.IntervalSeconds != nil {
+			v := *req.IntervalSeconds
+			if v < 0 {
+				v = 0
+			}
+			minSec := int(minAutoUpdateInterval / time.Second)
+			if v > 0 && v < minSec {
+				v = minSec // floor: never poll faster than the server fetches
+			}
+			pl.Profiles[idx].AutoUpdateInterval = v
+		}
+		if err := s.saveProfiles(pl); err != nil {
+			http.Error(w, fmt.Sprintf("save: %v", err), 500)
+			return
+		}
+		writeJSON(w, map[string]any{
+			"ok":              true,
+			"channels":        pl.Profiles[idx].AutoUpdate,
+			"intervalSeconds": pl.Profiles[idx].AutoUpdateInterval,
+		})
+
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+// handleAutoUpdateToggle flips one channel's membership. Body {channel}.
+// Returns {enabled, channels}.
+func (s *Server) handleAutoUpdateToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var req struct {
+		Channel string `json:"channel"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", 400)
+		return
+	}
+	name := strings.TrimPrefix(strings.TrimSpace(req.Channel), "@")
+	if name == "" {
+		http.Error(w, "channel required", 400)
+		return
+	}
+	pl, err := s.loadProfiles()
+	if err != nil || pl == nil || pl.Active == "" {
+		http.Error(w, "no active profile", 400)
+		return
+	}
+	idx := -1
+	for i, p := range pl.Profiles {
+		if p.ID == pl.Active {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		http.Error(w, "active profile not found", 400)
+		return
+	}
+	current := pl.Profiles[idx].AutoUpdate
+	on := false
+	hit := -1
+	for i, n := range current {
+		if strings.TrimPrefix(strings.TrimSpace(n), "@") == name {
+			hit = i
+			break
+		}
+	}
+	if hit >= 0 {
+		current = append(current[:hit], current[hit+1:]...)
+	} else {
+		current = append(current, name)
+		on = true
+	}
+	pl.Profiles[idx].AutoUpdate = normaliseAutoUpdateList(current)
+	if err := s.saveProfiles(pl); err != nil {
+		http.Error(w, fmt.Sprintf("save: %v", err), 500)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":       true,
+		"channel":  name,
+		"enabled":  on,
+		"channels": pl.Profiles[idx].AutoUpdate,
+	})
+}
+
+// normaliseAutoUpdateList strips @ + whitespace, drops empties, dedupes
+// while preserving order.
+func normaliseAutoUpdateList(in []string) []string {
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, raw := range in {
+		name := strings.TrimPrefix(strings.TrimSpace(raw), "@")
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	return out
+}
+
 // handleSettings manages user preferences (font size etc.).
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -2223,26 +2565,42 @@ func (s *Server) handleVersionCheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "latestVersion": v})
 }
 
-// handleClearCache deletes all files in the cache directory.
+// runMediaCacheSweep evicts expired media-cache entries every hour for the
+// lifetime of the process.
+func (s *Server) runMediaCacheSweep() {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		if s.mediaCache == nil {
+			return
+		}
+		s.mediaCache.Cleanup()
+	}
+}
+
+// handleClearCache wipes both the per-channel message cache and the
+// downloaded-media disk cache.
 func (s *Server) handleClearCache(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
-	cacheDir := filepath.Join(s.dataDir, "cache")
-	entries, err := os.ReadDir(cacheDir)
-	if err != nil {
-		writeJSON(w, map[string]any{"ok": true, "deleted": 0})
-		return
-	}
 	deleted := 0
-	for _, e := range entries {
-		if !e.IsDir() {
+	cacheDir := filepath.Join(s.dataDir, "cache")
+	if entries, err := os.ReadDir(cacheDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
 			if os.Remove(filepath.Join(cacheDir, e.Name())) == nil {
 				deleted++
 			}
 		}
 	}
-	s.addLog(fmt.Sprintf("Cache cleared: %d files deleted", deleted))
-	writeJSON(w, map[string]any{"ok": true, "deleted": deleted})
+	mediaDeleted := 0
+	if s.mediaCache != nil {
+		mediaDeleted = s.mediaCache.Clear()
+	}
+	s.addLog(fmt.Sprintf("Cache cleared: %d message files, %d media files", deleted, mediaDeleted))
+	writeJSON(w, map[string]any{"ok": true, "deleted": deleted, "mediaDeleted": mediaDeleted})
 }

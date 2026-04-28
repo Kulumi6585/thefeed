@@ -27,6 +27,13 @@ type Feed struct {
 	telegramLoggedIn bool
 	nextFetch        uint32
 	latestVersion    string
+
+	// media holds binary blobs (images, files, ...) on a separate set of
+	// channel numbers in the [MediaChannelStart, MediaChannelEnd] range. It
+	// may be nil when media downloads are disabled — Feed.GetBlock then
+	// rejects queries to media channels with a not-found error, mirroring
+	// pre-feature behaviour.
+	media *MediaCache
 }
 
 // NewFeed creates a new Feed with the given channel names.
@@ -88,6 +95,16 @@ func (f *Feed) GetBlock(channel, block int) ([]byte, error) {
 	if channel == int(protocol.TitlesChannel) {
 		return f.getTitlesBlock(block)
 	}
+	// Channel sits in the binary media range — delegate to MediaCache. We
+	// drop the read lock first because MediaCache uses its own lock and we
+	// don't want to hold f.mu across that path.
+	if channel >= 0 && channel <= 0xFFFF && protocol.IsMediaChannel(uint16(channel)) {
+		media := f.media
+		if media == nil {
+			return nil, fmt.Errorf("media channel %d not configured", channel)
+		}
+		return media.GetBlock(uint16(channel), uint16(block))
+	}
 
 	ch, ok := f.blocks[channel]
 	if !ok {
@@ -97,6 +114,22 @@ func (f *Feed) GetBlock(channel, block int) ([]byte, error) {
 		return nil, fmt.Errorf("block %d out of range (channel %d has %d blocks)", block, channel, len(ch))
 	}
 	return ch[block], nil
+}
+
+// SetMediaCache attaches a MediaCache to this Feed. Pass nil to disable
+// media serving (the default for backward compat). Safe to call once at
+// startup before any DNS query is served.
+func (f *Feed) SetMediaCache(c *MediaCache) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.media = c
+}
+
+// MediaCache returns the configured MediaCache or nil.
+func (f *Feed) MediaCache() *MediaCache {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.media
 }
 
 func (f *Feed) getVersionBlock(block int) ([]byte, error) {
