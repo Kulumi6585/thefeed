@@ -199,12 +199,10 @@ env_get() {
 setup_config() {
     mkdir -p "$DATA_DIR"
 
-    local is_update=false
+    local is_update=false cur_allow_manage=""
     if [[ -f "$DATA_DIR/thefeed.env" ]]; then
         is_update=true
-        set -a
-        source "$DATA_DIR/thefeed.env"
-        set +a
+        cur_allow_manage=$(env_get THEFEED_ALLOW_MANAGE)
     fi
 
     # --- Channels ---
@@ -288,7 +286,7 @@ setup_config() {
     echo -e "${yellow}Allow remote management (send messages, add/remove channels)?${plain}"
     echo -e "  If enabled, anyone with the passphrase can manage channels."
     local allow_manage=""
-    if [[ "${THEFEED_ALLOW_MANAGE:-}" == "1" ]]; then
+    if [[ "$cur_allow_manage" == "1" ]]; then
         read -rp "Enable remote management? [Y/n]: " allow_manage
         if [[ "$allow_manage" == "n" || "$allow_manage" == "N" ]]; then
             allow_manage="0"
@@ -699,14 +697,7 @@ install_thefeed() {
     # Download
     download_binary "$version"
 
-    # setup_config handles both first install and re-configuration
     setup_config
-
-    # Reload env from the just-written file. Wipe any THEFEED_*/TELEGRAM_*
-    # that leaked from setup_config's source of the OLD env file first —
-    # otherwise switching from no-telegram → telegram-login would still
-    # bake --no-telegram into the systemd unit because THEFEED_NO_TELEGRAM=1
-    # from the old file is still set in the shell.
     while IFS= read -r v; do
         unset "$v"
     done < <(env | awk -F= '/^THEFEED_|^TELEGRAM_/{print $1}')
@@ -853,16 +844,15 @@ done
 
 case "$ACTION" in
     help)
-        show_help ;;
+        show_help; exit 0 ;;
     login)
-        login_only ;;
+        login_only; exit 0 ;;
     uninstall)
-        uninstall_thefeed ;;
+        uninstall_thefeed; exit 0 ;;
     list)
-        list_versions ;;
+        list_versions; exit 0 ;;
     install)
         install_base
-        install_thefeed "$REQUEST_VERSION" "$REQUEST_CHANNEL" ;;
+        install_thefeed "$REQUEST_VERSION" "$REQUEST_CHANNEL"
+        exit 0 ;;
 esac
-
-exit 0
