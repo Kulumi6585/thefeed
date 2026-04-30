@@ -365,7 +365,7 @@ setup_config() {
 
     local gh_token="" gh_repo="" gh_branch="${cur_gh_branch:-main}"
     local gh_max_size="${cur_gh_size:-15360}"
-    local gh_ttl="${cur_gh_ttl:-10080}"
+    local gh_ttl="${cur_gh_ttl:-600}"
     if [[ "$gh_enabled" == "1" ]]; then
         if [[ -n "$cur_gh_token" ]]; then
             read -rp "GitHub token (PAT, contents:write) [keep current]: " gh_token

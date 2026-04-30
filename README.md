@@ -83,7 +83,7 @@ Each relay is independent — the same file can be served via DNS *and* GitHub *
 Two relays ship today:
 
 - **DNS relay** (slow, default on). Bytes are split into DNS blocks. Survives in censored networks. Default cap: 100 KB.
-- **GitHub relay** (fast, default off). Bytes are uploaded to a repo and pulled by clients over plain HTTPS. Needs a personal access token with `contents:write`. Files land at `<repo>/<sanitised-domain>/<size>_<crc32>` so multiple deployments can share one repo. Default cap: 25 MB.
+- **GitHub relay** (fast, default off). Bytes are uploaded to a repo and pulled by clients over plain HTTPS. Needs a personal access token with `contents:write`. Files land at `<repo>/<sanitised-domain>/<size>_<crc32>` so multiple deployments can share one repo. Default cap: 15 MB.
 
 Block 0 of every DNS-cached file begins with a 16-byte protocol header — 4 bytes CRC32 of the (decompressed) content, 1 byte version, 1 byte compression, 10 bytes reserved. The remaining bytes are decompressed per the compression byte. Downloads are cached on the client (IndexedDB, 7 days) and on the local thefeed-client server (`<dataDir>/media-cache/`, 7 days). Concurrent downloads are limited and extra clicks are queued.
 
@@ -99,7 +99,7 @@ Server flags / env vars:
 | `--github-relay-token`        | `THEFEED_GITHUB_RELAY_TOKEN`         | —           | PAT, `contents:write`              |
 | `--github-relay-repo`         | `THEFEED_GITHUB_RELAY_REPO`          | —           | `owner/repo`                       |
 | `--github-relay-branch`       | `THEFEED_GITHUB_RELAY_BRANCH`        | `main`      | branch to commit relay objects to  |
-| `--github-relay-max-size`     | `THEFEED_GITHUB_RELAY_MAX_SIZE_KB`   | `25600` (KB)| per-file cap                       |
+| `--github-relay-max-size`     | `THEFEED_GITHUB_RELAY_MAX_SIZE_KB`   | `15360` (KB)| per-file cap                       |
 | `--github-relay-ttl`          | `THEFEED_GITHUB_RELAY_TTL_MIN`       | `600` (min) | orphans pruned next refresh cycle  |
 
 The hourly DNS report includes `totalMediaQueries` and a `mediaCache` block (entries, bytes, hits, misses, evictions).
@@ -388,7 +388,7 @@ Environment variables: `THEFEED_DOMAIN`, `THEFEED_KEY`, `THEFEED_MSG_LIMIT`, `TH
 | `--github-relay-token` | | PAT with `contents:write` (or `THEFEED_GITHUB_RELAY_TOKEN`) |
 | `--github-relay-repo` | | `owner/repo` for the relay |
 | `--github-relay-branch` | `main` | Branch to commit relay objects to |
-| `--github-relay-max-size` | `25600` | Per-file cap for the GitHub relay in KB |
+| `--github-relay-max-size` | `15360` | Per-file cap for the GitHub relay in KB |
 | `--github-relay-ttl` | `600` | GitHub-relay TTL in minutes (orphans pruned next cycle) |
 | `--version` | | Show version and exit |
 

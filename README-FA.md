@@ -357,7 +357,7 @@ make upx            # فشرده‌سازی باینری‌ها با UPX
 دو رله الان موجود هست:
 
 - **رله DNS** (کند، پیش‌فرض روشن). بایت‌ها به بلاک‌های DNS تقسیم می‌شوند. در شبکه‌های فیلترشده کار می‌کند. سقف پیش‌فرض: ۱۰۰ کیلوبایت.
-- **رله گیتهاب** (سریع، پیش‌فرض خاموش). فایل‌ها در یک ریپازیتوری آپلود می‌شوند و کلاینت‌ها از طریق `api.github.com` (که در خیلی از کشورها برخلاف `raw.githubusercontent.com` در دسترس است) با HTTPS می‌گیرند. به یک Personal Access Token با اسکوپ `contents:write` نیاز دارد. مسیر فایل‌ها `<repo>/<sanitised-domain>/<size>_<crc32>` است تا چند سرور بتوانند یک ریپازیتوری مشترک داشته باشند. سقف پیش‌فرض: ۲۵ مگابایت.
+- **رله گیتهاب** (سریع، پیش‌فرض خاموش). فایل‌ها در یک ریپازیتوری آپلود می‌شوند و کلاینت‌ها از طریق `api.github.com` (که در خیلی از کشورها برخلاف `raw.githubusercontent.com` در دسترس است) با HTTPS می‌گیرند. به یک Personal Access Token با اسکوپ `contents:write` نیاز دارد. مسیر فایل‌ها `<repo>/<sanitised-domain>/<size>_<crc32>` است تا چند سرور بتوانند یک ریپازیتوری مشترک داشته باشند. سقف پیش‌فرض: ۱۵ مگابایت.
 
 پرچم‌ها / متغیرهای محیطی:
 
@@ -373,7 +373,7 @@ make upx            # فشرده‌سازی باینری‌ها با UPX
 | `--github-relay-token`     | `THEFEED_GITHUB_RELAY_TOKEN`         | —            | PAT با دسترسی `contents:write`      |
 | `--github-relay-repo`      | `THEFEED_GITHUB_RELAY_REPO`          | —            | `owner/repo`                        |
 | `--github-relay-branch`    | `THEFEED_GITHUB_RELAY_BRANCH`        | `main`       | برنچ کامیت                          |
-| `--github-relay-max-size`  | `THEFEED_GITHUB_RELAY_MAX_SIZE_KB`   | `25600` (KB) | سقف هر فایل                        |
+| `--github-relay-max-size`  | `THEFEED_GITHUB_RELAY_MAX_SIZE_KB`   | `15360` (KB) | سقف هر فایل                        |
 | `--github-relay-ttl`       | `THEFEED_GITHUB_RELAY_TTL_MIN`       | `600` (min)  | فایل‌های یتیم در سیکل بعدی پاک می‌شوند |
 
 </div>
@@ -407,7 +407,7 @@ make upx            # فشرده‌سازی باینری‌ها با UPX
 | `--github-relay-token` | | توکن گیتهاب (`contents:write`) |
 | `--github-relay-repo` | | `owner/repo` ریپازیتوری رله |
 | `--github-relay-branch` | `main` | برنچی که رله روش کامیت می‌کند |
-| `--github-relay-max-size` | `25600` | سقف هر فایل برای رله گیتهاب بر حسب KB |
+| `--github-relay-max-size` | `15360` | سقف هر فایل برای رله گیتهاب بر حسب KB |
 | `--github-relay-ttl` | `600` | TTL رله گیتهاب بر حسب دقیقه |
 
 ## 📋 پرچم‌های کلاینت

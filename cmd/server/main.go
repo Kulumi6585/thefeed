@@ -47,7 +47,7 @@ func main() {
 	ghToken := flag.String("github-relay-token", "", "GitHub PAT with contents:write on the relay repo")
 	ghRepo := flag.String("github-relay-repo", "", "GitHub repo for the fast relay, e.g. owner/repo")
 	ghBranch := flag.String("github-relay-branch", "main", "Default branch to commit to (e.g. main, master)")
-	ghMaxSizeKB := flag.Int("github-relay-max-size", 25*1024, "Per-file cap for the GitHub relay in KB (0 = no cap)")
+	ghMaxSizeKB := flag.Int("github-relay-max-size", 15*1024, "Per-file cap for the GitHub relay in KB (0 = no cap)")
 	ghCacheTTLMin := flag.Int("github-relay-ttl", 600, "TTL for GitHub-relay objects in minutes")
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	flag.Usage = func() {
