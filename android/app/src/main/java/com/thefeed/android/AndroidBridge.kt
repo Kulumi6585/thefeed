@@ -7,9 +7,13 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.util.Base64
+import android.util.Log
 import android.webkit.JavascriptInterface
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
@@ -98,9 +102,10 @@ class AndroidBridge(private val activity: Activity) {
 
     @JavascriptInterface
     fun saveMedia(base64: String, mime: String, filename: String): Boolean {
+        val bytes = try { Base64.decode(base64, Base64.DEFAULT) }
+                   catch (e: Exception) { toast("Save failed: bad data"); Log.e(TAG, "saveMedia decode", e); return false }
+        val safe = sanitiseFilename(filename)
         return try {
-            val bytes = Base64.decode(base64, Base64.DEFAULT)
-            val safe = sanitiseFilename(filename)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val resolver = activity.contentResolver
                 val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
@@ -108,19 +113,45 @@ class AndroidBridge(private val activity: Activity) {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, safe)
                     put(MediaStore.MediaColumns.MIME_TYPE, sanitiseMime(mime))
                     put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
                 }
-                val target = resolver.insert(collection, values) ?: return false
-                resolver.openOutputStream(target)?.use { it.write(bytes) }
-                true
+                val target = resolver.insert(collection, values)
+                if (target == null) {
+                    toast("Save failed: no Downloads URI")
+                    return false
+                }
+                resolver.openOutputStream(target).use { os ->
+                    if (os == null) {
+                        resolver.delete(target, null, null)
+                        toast("Save failed: cannot open Downloads")
+                        return false
+                    }
+                    os.write(bytes)
+                    os.flush()
+                }
+                val done = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+                resolver.update(target, done, null, null)
+                toast("Saved to Downloads/$safe")
             } else {
                 @Suppress("DEPRECATION")
                 val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
                 if (!dir.exists()) dir.mkdirs()
                 val out = File(dir, safe)
                 FileOutputStream(out).use { it.write(bytes) }
-                true
+                toast("Saved to ${out.absolutePath}")
             }
-        } catch (_: Exception) { false }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "saveMedia failed", e)
+            toast("Save failed: ${e.message}")
+            false
+        }
+    }
+
+    private fun toast(msg: String) {
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(activity, msg, Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun writeToCache(base64: String, filename: String): Uri {
@@ -150,5 +181,6 @@ class AndroidBridge(private val activity: Activity) {
     companion object {
         const val PREF_PASSWORD_HASH = "password_hash"
         const val PREF_LANG = "app_lang"
+        private const val TAG = "AndroidBridge"
     }
 }
