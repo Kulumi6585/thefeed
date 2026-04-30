@@ -390,25 +390,35 @@ setup_config() {
     fi
 
     # --- Telegram mode ---
-    local no_telegram=""
+    local cur_no_tg=""
+    if $is_update; then
+        cur_no_tg=$(env_get THEFEED_NO_TELEGRAM)
+    fi
     echo ""
     echo -e "${green}═══════════════════════════════════════${plain}"
     echo -e "${green}  Telegram Mode Selection${plain}"
     echo -e "${green}═══════════════════════════════════════${plain}"
     echo ""
-    echo -e "${yellow}Option 1: Without Telegram (Recommended)${plain}"
-    echo -e "  - Safer: no Telegram credentials stored on server"
-    echo -e "  - Reads public channels without login"
-    echo -e "  - Cannot read private channels or send messages"
+    echo -e "  ${yellow}1)${plain} Without Telegram ${green}(recommended)${plain}"
+    echo -e "     - No Telegram credentials stored on server"
+    echo -e "     - Reads public channels only"
     echo ""
-    echo -e "${yellow}Option 2: With Telegram${plain}"
-    echo -e "  - Required for private channels, groups, and sending messages"
-    echo -e "  - Needs Telegram API credentials and phone number"
+    echo -e "  ${yellow}2)${plain} With Telegram"
+    echo -e "     - Needs API ID, API hash, and phone number"
+    echo -e "     - Required for private channels and sending messages"
     echo ""
-    read -rp "Run without Telegram login? (recommended) [Y/n]: " no_telegram
+    local mode_default="1"
+    [[ "$cur_no_tg" != "1" && "$is_update" == "true" && -n "$(env_get TELEGRAM_API_ID)" && "$(env_get TELEGRAM_API_ID)" != "0" ]] && mode_default="2"
+    local mode_in=""
+    while true; do
+        read -rp "Choose mode [1/2] (default: ${mode_default}): " mode_in
+        mode_in="${mode_in:-$mode_default}"
+        [[ "$mode_in" == "1" || "$mode_in" == "2" ]] && break
+        echo -e "${red}Enter 1 or 2${plain}"
+    done
 
     local api_id="" api_hash="" phone="" listen_addr=""
-    if [[ "$no_telegram" != "n" && "$no_telegram" != "N" ]]; then
+    if [[ "$mode_in" == "1" ]]; then
         api_id="0"
         api_hash="none"
         phone="none"
@@ -449,6 +459,9 @@ ENVEOF
         cur_api_id=$(env_get TELEGRAM_API_ID)
         cur_api_hash=$(env_get TELEGRAM_API_HASH)
         cur_phone=$(env_get TELEGRAM_PHONE)
+        [[ "$cur_api_id" == "0" ]] && cur_api_id=""
+        [[ "$cur_api_hash" == "none" ]] && cur_api_hash=""
+        [[ "$cur_phone" == "none" ]] && cur_phone=""
     fi
 
     while true; do
