@@ -17,6 +17,20 @@ import (
 	"github.com/sartoopjj/thefeed/internal/protocol"
 )
 
+// ghRateLimitError is returned by fetchGitHubRaw when GitHub rejects
+// with 403 + X-RateLimit-Remaining: 0. Surfacing it as a typed error
+// lets the caller render a specific 429 to the browser so the UI can
+// show a "rate limited, try again at HH:MM" popup instead of a generic
+// relay failure.
+type ghRateLimitError struct {
+	ResetUnix int64
+	Body      string
+}
+
+func (e *ghRateLimitError) Error() string {
+	return fmt.Sprintf("github rate limit (reset=%d): %s", e.ResetUnix, e.Body)
+}
+
 // relayHTTPClient is the single shared HTTP client for the GitHub relay
 // path. Reusing one client (and its underlying *http.Transport) gives us
 // connection pooling and DNS-result caching for free across the many
@@ -161,7 +175,23 @@ func (s *Server) serveFromGitHubRelay(w http.ResponseWriter, r *http.Request, si
 	encBody, _, err := fetchGitHubRaw(ctx, relayHTTPClient, url, size+int64(aeadOverhead))
 	if err != nil {
 		s.addLog(fmt.Sprintf("relay: fetch %s: %v", url, err))
-
+		// Rate-limit gets surfaced specifically so the UI can show a
+		// "try again at HH:MM" popup. Other errors fall through to the
+		// caller's 502 → existing slow-DNS fallback prompt.
+		var rl *ghRateLimitError
+		if errors.As(err, &rl) {
+			minutes := int64(1)
+			if rl.ResetUnix > 0 {
+				secs := rl.ResetUnix - time.Now().Unix()
+				if secs > 0 {
+					minutes = (secs + 59) / 60
+				}
+			}
+			w.Header().Set("X-Relay-Reset", strconv.FormatInt(rl.ResetUnix, 10))
+			w.Header().Set("X-Relay-Reset-Min", strconv.FormatInt(minutes, 10))
+			http.Error(w, "github rate limit", http.StatusTooManyRequests)
+			return true
+		}
 		return false
 	}
 	body, err := protocol.DecryptRelayBlob(relayKey, encBody)
@@ -205,13 +235,20 @@ func fetchGitHubRaw(ctx context.Context, hc *http.Client, url string, expectedSi
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		// Surface enough context to tell rate-limit, abuse-detection,
-		// and plain auth errors apart. GitHub puts a JSON message in
-		// the body and rate-limit counters in the response headers.
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		rl := resp.Header.Get("X-RateLimit-Remaining")
 		reset := resp.Header.Get("X-RateLimit-Reset")
 		retry := resp.Header.Get("Retry-After")
+		// Distinct typed error for the rate-limit case so the caller
+		// can render a 429 with the reset time instead of a generic
+		// 502 / fallback error.
+		if resp.StatusCode == http.StatusForbidden && rl == "0" {
+			resetUnix, _ := strconv.ParseInt(reset, 10, 64)
+			return nil, "", &ghRateLimitError{
+				ResetUnix: resetUnix,
+				Body:      strings.TrimSpace(string(errBody)),
+			}
+		}
 		hdr := ""
 		if rl != "" {
 			hdr += " rl-remaining=" + rl

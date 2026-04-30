@@ -2593,6 +2593,8 @@
         auto_update_off: 'به‌روزرسانی خودکار برای @{name} خاموش شد',
         media_relay_fallback: 'دانلود از مسیر سریع نشد. از مسیر کند (DNS) امتحان کنیم؟ توجه: ممکن است خیلی کند باشد.',
         media_slow_only: 'رله گیتهاب در دسترس نیست. دانلود از مسیر DNS خیلی کند است. ادامه می‌دهی؟',
+        media_rate_limited: 'به محدودیت تعداد درخواست گیتهاب رسیدی. حدود {n} دقیقه دیگه دوباره فعال میشه. حالا از مسیر کند (DNS) دانلود کنیم؟',
+        media_rate_limited_short: 'محدودیت تعداد درخواست گیتهاب',
         media_size_mismatch: 'سایز فایل با چیزی که سرور گفته بود نمی‌خونه',
         clear_cache: 'پاک کردن کش', clear_cache_btn: '🗑 پاک کردن کش', cache_cleared: 'کش پاک شد!',
         saved_resolvers_title: 'شروع سریع',
@@ -2760,6 +2762,8 @@
         auto_update_off: 'Auto-update is now OFF for @{name}',
         media_relay_fallback: 'Fast relay failed. Try the slow DNS path? Note: this can be very slow.',
         media_slow_only: 'GitHub relay is unavailable for this file. The DNS path is very slow. Download anyway?',
+        media_rate_limited: 'GitHub rate limit hit. Resets in about {n} min. Try the slow DNS path now?',
+        media_rate_limited_short: 'GitHub rate limit',
         media_size_mismatch: 'Downloaded size doesn\'t match the manifest',
         clear_cache: 'Clear Cache', clear_cache_btn: '🗑 Clear Cache', cache_cleared: 'Cache cleared!',
         saved_resolvers_title: 'Quick Start',
@@ -4509,9 +4513,28 @@
           mediaShowBlob(card, blobURL);
           mediaPersistBlob(msgID, card, xhr.response, mediaBlobs[msgID].mime);
         } else {
+          // GitHub rate limit gets its own popup with the reset time so
+          // the user knows it's temporary and how long to wait.
+          if (source === 'fast' && xhr.status === 429) {
+            var resetMin = parseInt(xhr.getResponseHeader('X-Relay-Reset-Min') || '0', 10);
+            await handleRateLimit(resetMin);
+            return;
+          }
           if (source === 'fast') { handleFastFailure(xhr.statusText || ('HTTP ' + xhr.status)); return; }
           mediaShowError(card, xhr.statusText || ('HTTP ' + xhr.status));
         }
+      }
+      async function handleRateLimit(resetMin) {
+        var minutes = (resetMin && resetMin > 0) ? resetMin : '?';
+        var msg = (t('media_rate_limited') || 'GitHub rate limit hit. Reset in {n} min. Try the slow DNS path?').replace('{n}', minutes);
+        if (dnsAvail) {
+          var ok = await showConfirmDialog(msg, t('yes') || 'Yes', t('no') || 'No');
+          if (ok) { restartWith('slow'); return; }
+        } else {
+          await showInfoDialog(msg, t('ok') || 'OK');
+        }
+        mediaShowError(card, t('media_rate_limited_short') || 'Rate limited');
+        finishSlot();
       }
       function finishSlot() {
         mediaActiveCount = Math.max(0, mediaActiveCount - 1);
