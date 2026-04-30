@@ -90,8 +90,10 @@ _split_releases() {
 }
 
 get_latest_prerelease() {
+    # GitHub's pretty-printed JSON has "prerelease": true (with space). After
+    # tr -d '\n' the spaces stay, so the grep needs to allow whitespace.
     _split_releases \
-        | grep -F '"prerelease":true' \
+        | grep -E '"prerelease":[[:space:]]*true' \
         | head -1 \
         | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/'
 }
@@ -105,7 +107,7 @@ list_versions() {
             *) continue ;;
         esac
         tag=$(echo "$line" | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')
-        if echo "$line" | grep -qF '"prerelease":true'; then
+        if echo "$line" | grep -qE '"prerelease":[[:space:]]*true'; then
             label="[pre-release]"
         else
             label="[stable]"
@@ -237,12 +239,13 @@ setup_config() {
     echo -e "${green}═══════════════════════════════════════${plain}"
     echo ""
 
-    local cur_domain cur_key cur_limit cur_listen
+    local cur_domain cur_key cur_limit cur_listen cur_fetch_interval
     if $is_update; then
         cur_domain=$(env_get THEFEED_DOMAIN)
         cur_key=$(env_get THEFEED_KEY)
         cur_limit=$(env_get THEFEED_MSG_LIMIT)
         cur_listen=$(env_get THEFEED_LISTEN)
+        cur_fetch_interval=$(env_get THEFEED_FETCH_INTERVAL)
     fi
 
     local domain=""
@@ -273,6 +276,14 @@ setup_config() {
     read -rp "Max messages per channel [${cur_limit:-15}]: " msg_limit
     msg_limit="${msg_limit:-${cur_limit:-15}}"
 
+    local fetch_interval=""
+    while true; do
+        read -rp "Fetch cycle interval, minutes (min 3) [${cur_fetch_interval:-10}]: " fetch_interval
+        fetch_interval="${fetch_interval:-${cur_fetch_interval:-10}}"
+        if [[ "$fetch_interval" =~ ^[0-9]+$ ]] && [[ "$fetch_interval" -ge 3 ]]; then break; fi
+        echo -e "${red}Must be an integer ≥ 3${plain}"
+    done
+
     echo ""
     echo -e "${yellow}Allow remote management (send messages, add/remove channels)?${plain}"
     echo -e "  If enabled, anyone with the passphrase can manage channels."
@@ -302,7 +313,7 @@ setup_config() {
     echo -e "${green}  Media relays${plain}"
     echo -e "${green}═══════════════════════════════════════${plain}"
     local cur_dns_enabled cur_dns_size cur_dns_ttl cur_dns_comp
-    local cur_gh_enabled cur_gh_token cur_gh_repo cur_gh_size cur_gh_ttl
+    local cur_gh_enabled cur_gh_token cur_gh_repo cur_gh_branch cur_gh_size cur_gh_ttl
     if $is_update; then
         cur_dns_enabled=$(env_get THEFEED_DNS_MEDIA_ENABLED)
         cur_dns_size=$(env_get THEFEED_DNS_MEDIA_MAX_SIZE_KB)
@@ -311,6 +322,7 @@ setup_config() {
         cur_gh_enabled=$(env_get THEFEED_GITHUB_RELAY_ENABLED)
         cur_gh_token=$(env_get THEFEED_GITHUB_RELAY_TOKEN)
         cur_gh_repo=$(env_get THEFEED_GITHUB_RELAY_REPO)
+        cur_gh_branch=$(env_get THEFEED_GITHUB_RELAY_BRANCH)
         cur_gh_size=$(env_get THEFEED_GITHUB_RELAY_MAX_SIZE_KB)
         cur_gh_ttl=$(env_get THEFEED_GITHUB_RELAY_TTL_MIN)
     fi
@@ -351,7 +363,8 @@ setup_config() {
     local gh_enabled="0"
     if [[ "$gh_enabled_in" == "y" || "$gh_enabled_in" == "Y" ]]; then gh_enabled="1"; fi
 
-    local gh_token="" gh_repo="" gh_max_size="${cur_gh_size:-15360}"
+    local gh_token="" gh_repo="" gh_branch="${cur_gh_branch:-main}"
+    local gh_max_size="${cur_gh_size:-15360}"
     local gh_ttl="${cur_gh_ttl:-10080}"
     if [[ "$gh_enabled" == "1" ]]; then
         if [[ -n "$cur_gh_token" ]]; then
@@ -370,6 +383,8 @@ setup_config() {
             if [[ "$gh_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then break; fi
             echo -e "${red}Invalid repo. Format: owner/repo${plain}"
         done
+        read -rp "GitHub relay branch [${gh_branch}]: " in
+        gh_branch="${in:-$gh_branch}"
         read -rp "GitHub relay max file size in KB [${gh_max_size}]: " in
         gh_max_size="${in:-$gh_max_size}"
         read -rp "GitHub relay TTL in minutes [${gh_ttl}]: " in
@@ -412,6 +427,7 @@ TELEGRAM_API_ID=${api_id}
 TELEGRAM_API_HASH=${api_hash}
 TELEGRAM_PHONE=${phone}
 THEFEED_LISTEN=${listen_addr}
+THEFEED_FETCH_INTERVAL=${fetch_interval}
 THEFEED_NO_TELEGRAM=1
 THEFEED_DNS_MEDIA_ENABLED=${dns_enabled}
 THEFEED_DNS_MEDIA_MAX_SIZE_KB=${dns_max_size}
@@ -420,6 +436,7 @@ THEFEED_DNS_MEDIA_COMPRESSION=${dns_comp}
 THEFEED_GITHUB_RELAY_ENABLED=${gh_enabled}
 THEFEED_GITHUB_RELAY_TOKEN=${gh_token}
 THEFEED_GITHUB_RELAY_REPO=${gh_repo}
+THEFEED_GITHUB_RELAY_BRANCH=${gh_branch}
 THEFEED_GITHUB_RELAY_MAX_SIZE_KB=${gh_max_size}
 THEFEED_GITHUB_RELAY_TTL_MIN=${gh_ttl}
 ENVEOF
@@ -482,6 +499,7 @@ TELEGRAM_API_ID=${api_id}
 TELEGRAM_API_HASH=${api_hash}
 TELEGRAM_PHONE=${phone}
 THEFEED_LISTEN=${listen_addr}
+THEFEED_FETCH_INTERVAL=${fetch_interval}
 THEFEED_DNS_MEDIA_ENABLED=${dns_enabled}
 THEFEED_DNS_MEDIA_MAX_SIZE_KB=${dns_max_size}
 THEFEED_DNS_MEDIA_CACHE_TTL_MIN=${dns_ttl}
@@ -489,6 +507,7 @@ THEFEED_DNS_MEDIA_COMPRESSION=${dns_comp}
 THEFEED_GITHUB_RELAY_ENABLED=${gh_enabled}
 THEFEED_GITHUB_RELAY_TOKEN=${gh_token}
 THEFEED_GITHUB_RELAY_REPO=${gh_repo}
+THEFEED_GITHUB_RELAY_BRANCH=${gh_branch}
 THEFEED_GITHUB_RELAY_MAX_SIZE_KB=${gh_max_size}
 THEFEED_GITHUB_RELAY_TTL_MIN=${gh_ttl}
 ENVEOF
@@ -630,6 +649,13 @@ show_usage() {
 install_thefeed() {
     local version="$1"
     local channel="${2:-stable}"  # "stable" or "pre"
+
+    # When invoked via `curl | bash`, stdin is the pipe, not a terminal —
+    # so every read in setup_config returns empty and the user is never
+    # prompted. Re-open stdin from /dev/tty so prompts work as expected.
+    if [[ ! -t 0 ]] && [[ -e /dev/tty ]]; then
+        exec </dev/tty
+    fi
 
     if [[ -z "$version" ]]; then
         if [[ "$channel" == "pre" ]]; then
