@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -17,66 +16,28 @@ import (
 	"github.com/sartoopjj/thefeed/internal/protocol"
 )
 
-// defaultRelayClient is used on platforms where the OS resolver works
-// out of the box (Linux desktop, macOS, Windows, *BSD). It resolves
-// `api.github.com` via the user's system DNS — the same way any other
-// browser/curl would.
-var defaultRelayClient = &http.Client{Timeout: 30 * time.Second}
-
-// fallbackPublicDNS is the last-resort resolver list used on Android
-// when the project hasn't accumulated any active resolvers yet. The
-// dialer tries each one in turn, so a single blocked endpoint doesn't
-// kill the relay path. Mix of Cloudflare, Google, Quad9, AdGuard so at
-// least one is reachable from most networks (including blocked ones).
-var fallbackPublicDNS = []string{
-	"1.1.1.1:53",
-	"8.8.8.8:53",
-	"9.9.9.9:53",
-	"94.140.14.14:53", // AdGuard
-}
-
-// newRelayHTTPClient picks the right HTTP client for the GitHub relay
-// path. On Android the pure-Go OS resolver finds /etc/resolv.conf empty
-// and falls back to [::1]:53 — so we override it with the project's
-// active DNS resolvers (the same ones the rest of the app validated).
-// Everywhere else, we use the OS resolver to keep local-loopback test
-// setups (resolver=127.0.0.1) from breaking, since the user's local
-// thefeed-server doesn't resolve external hostnames.
-func newRelayHTTPClient(resolvers []string) *http.Client {
-	if runtime.GOOS != "android" {
-		return defaultRelayClient
-	}
-	picks := append([]string(nil), resolvers...)
-	if len(picks) == 0 {
-		picks = append(picks, fallbackPublicDNS...)
-	}
-	var idx int
-	dialDNS := func(ctx context.Context, network, _ string) (net.Conn, error) {
-		// Round-robin through the picks so a single bad resolver doesn't
-		// kill the relay path. Net.Resolver retries the Dial on failure
-		// against the next entry.
-		host := picks[idx%len(picks)]
-		idx++
-		d := net.Dialer{Timeout: 5 * time.Second}
-		return d.DialContext(ctx, network, host)
-	}
-	return &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			DialContext: (&net.Dialer{
-				Timeout: 10 * time.Second,
-				Resolver: &net.Resolver{
-					PreferGo: true,
-					Dial:     dialDNS,
-				},
-			}).DialContext,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          10,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-	}
+// relayHTTPClient is the single shared HTTP client for the GitHub relay
+// path. Reusing one client (and its underlying *http.Transport) gives us
+// connection pooling and DNS-result caching for free across the many
+// per-file fetches a media-heavy refresh cycle produces.
+//
+// We use the OS resolver everywhere. On Android the build is cgo-enabled
+// (see .github/workflows/build.yml), so net.Lookup* goes through
+// bionic libc → netd → the device's actual DNS, the same path any other
+// Android app uses. On desktop the OS resolver is similarly fine.
+var relayHTTPClient = &http.Client{
+	Timeout: 30 * time.Second,
+	Transport: &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          10,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	},
 }
 
 // relayInfoTTL is how long the cached repo-discovery payload stays valid.
@@ -196,8 +157,7 @@ func (s *Server) serveFromGitHubRelay(w http.ResponseWriter, r *http.Request, si
 	// The blob on disk is AES-256-GCM(nonce||ct||tag) over the plaintext.
 	// Cap the fetch at plaintext size + small overhead.
 	const aeadOverhead = protocol.NonceSize + 16 // GCM tag is 16 bytes
-	httpClient := newRelayHTTPClient(fetcher.Resolvers())
-	encBody, _, err := fetchGitHubRaw(ctx, httpClient, url, size+int64(aeadOverhead))
+	encBody, _, err := fetchGitHubRaw(ctx, relayHTTPClient, url, size+int64(aeadOverhead))
 	if err != nil {
 		s.addLog(fmt.Sprintf("relay: fetch %s: %v", url, err))
 		// Not handled — caller falls back to DNS.
