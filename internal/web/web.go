@@ -319,11 +319,16 @@ func (s *Server) Run() error {
 	}
 
 	srv := &http.Server{
-		Addr:         addr,
-		Handler:      handler,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:    addr,
+		Handler: handler,
+		// ReadHeaderTimeout protects against slow-loris on the request
+		// header. The body itself can be large (Telegram send-message
+		// uploads), and the response can be slow (DNS-tunneled media
+		// streams take many minutes for multi-block files in censored
+		// networks). So zero out ReadTimeout/WriteTimeout and bound the
+		// idle period on the connection itself.
+		ReadHeaderTimeout: 30 * time.Second,
+		IdleTimeout:       30 * time.Minute,
 	}
 	return srv.ListenAndServe()
 }

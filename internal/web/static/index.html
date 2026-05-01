@@ -3374,12 +3374,17 @@
           await selectChannel(1); return
         }
         if (data && typeof data === 'object' && data.type === 'no_changes') {
-          // Only show the toast if the user is still viewing the channel
-          // that reported no changes — silently drop it if they switched.
-          if (data.channel === selectedChannel) showToast(t('no_new_messages'));
+          // Only show the toast if the user explicitly asked for this
+          // refresh AND is still on the same channel. Channel-open and
+          // auto-refresh ticks stay silent.
+          if (data.channel === manualRefreshChannel && data.channel === selectedChannel) {
+            showToast(t('no_new_messages'));
+          }
+          if (data.channel === manualRefreshChannel) manualRefreshChannel = 0;
           if (snapChannel > 0) { delete refreshingChannels[snapChannel]; var fb = document.getElementById('prog-fetch-ch-' + snapChannel); if (fb) fb.remove() }
         } else if (data && typeof data === 'object' && data.channel) {
           delete refreshingChannels[data.channel]; var fb2 = document.getElementById('prog-fetch-ch-' + data.channel); if (fb2) fb2.remove();
+          if (data.channel === manualRefreshChannel) manualRefreshChannel = 0;
           // Only re-render if the user is STILL on that channel right now —
           // selectedChannel may have changed during the awaited loadChannels.
           if (data.channel === selectedChannel) await loadMessages(data.channel)
@@ -4921,19 +4926,16 @@
         showImageLightbox(entry.url, mediaTagLabel(tag));
         return;
       }
+      if (mediaIsPlayableTag(tag)) {
+        showMediaPlayer(entry, tag);
+        return;
+      }
       if (androidBridge && androidBridge.openMedia) {
         var fname = mediaFilenameFor(msgID, tag, entry.mime);
         try {
           var b64 = await blobToBase64(entry.blob);
           androidBridge.openMedia(b64, entry.mime || 'application/octet-stream', fname);
         } catch (e) { }
-        return;
-      }
-      // Browser path: play video/audio inline in a lightbox instead of
-      // opening a blob URL in a new tab — some browsers refuse to render
-      // blob:video and download it as a hash-named file with no extension.
-      if (mediaIsPlayableTag(tag)) {
-        showMediaPlayer(entry, tag);
         return;
       }
       try {
@@ -5596,6 +5598,12 @@
       }
       tick(); nextFetchInterval = setInterval(tick, 1000);
     }
+    // Channel number for which the user explicitly clicked Refresh.
+    // The "no new messages" toast fires only for that channel; auto-
+    // refresh ticks and channel-open refreshes leave it at 0 so the
+    // toast stays silent.
+    var manualRefreshChannel = 0;
+
     async function doRefreshUI() {
       var btn = document.getElementById('refreshBtn');
       btn.style.animation = 'spin .8s linear';
@@ -5605,6 +5613,7 @@
         var name = (ch && (ch.Name || ch.name)) || 'Channel ' + selectedChannel;
         showChannelFetchProgress(selectedChannel, name);
         refreshingChannels[selectedChannel] = true;
+        manualRefreshChannel = selectedChannel;
       }
       doRefresh(false);
       setTimeout(function () { btn.style.animation = '' }, 800);

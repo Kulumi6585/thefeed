@@ -41,16 +41,18 @@ func (e *ghRateLimitError) Error() string {
 // bionic libc → netd → the device's actual DNS, the same path any other
 // Android app uses. On desktop the OS resolver is similarly fine.
 var relayHTTPClient = &http.Client{
-	Timeout: 30 * time.Second,
+	// Per-request budget — large enough to cover multi-MB downloads
+	// over a slow link without hugging short-circuit timeouts.
+	Timeout: 5 * time.Minute,
 	Transport: &http.Transport{
 		DialContext: (&net.Dialer{
-			Timeout:   10 * time.Second,
+			Timeout:   15 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          10,
 		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
+		TLSHandshakeTimeout:   15 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	},
 }
@@ -131,7 +133,9 @@ func (s *Server) serveFromGitHubRelay(w http.ResponseWriter, r *http.Request, si
 		return false
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	// Long enough to cover a multi-MB GitHub fetch over a slow link, plus
+	// a multi-block DNS-tunneled relay-info lookup if the cache is empty.
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 
 	info, err := rc.get(ctx, fetcher)
