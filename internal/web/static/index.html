@@ -3356,12 +3356,13 @@
         }
         if (data && typeof data === 'object' && data.type === 'no_changes') {
           showToast(t('no_new_messages'));
-          // Refresh done — clear progress bar
           if (snapChannel > 0) { delete refreshingChannels[snapChannel]; var fb = document.getElementById('prog-fetch-ch-' + snapChannel); if (fb) fb.remove() }
         } else if (data && typeof data === 'object' && data.channel) {
           delete refreshingChannels[data.channel]; var fb2 = document.getElementById('prog-fetch-ch-' + data.channel); if (fb2) fb2.remove();
-          if (data.channel === snapChannel) await loadMessages(data.channel)
-        } else if (snapChannel > 0) {
+          // Only re-render if the user is STILL on that channel right now —
+          // selectedChannel may have changed during the awaited loadChannels.
+          if (data.channel === selectedChannel) await loadMessages(data.channel)
+        } else if (snapChannel > 0 && snapChannel === selectedChannel) {
           delete refreshingChannels[snapChannel]; var fb3 = document.getElementById('prog-fetch-ch-' + snapChannel); if (fb3) fb3.remove();
           await loadMessages(snapChannel)
         }
