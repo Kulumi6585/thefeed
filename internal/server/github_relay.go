@@ -523,7 +523,7 @@ func (g *GitHubRelay) getRef(ctx context.Context, branch string) (string, error)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		bodyStr := string(body)
 		// Detect "empty repo" by status + body message together. Don't
 		// trust status alone — GitHub uses 404 for missing branch,
@@ -537,7 +537,7 @@ func (g *GitHubRelay) getRef(ctx context.Context, branch string) (string, error)
 		if resp.StatusCode == http.StatusNotFound {
 			return g.bootstrapEmptyRepo(ctx, branch)
 		}
-		return "", fmt.Errorf("%s — %s", resp.Status, bodyStr)
+		return "", fmt.Errorf("%s — %s", resp.Status, trimErrBody(bodyStr))
 	}
 	var out struct {
 		Object struct {
@@ -602,8 +602,7 @@ func (g *GitHubRelay) getCommitTree(ctx context.Context, commitSHA string) (stri
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("%s — %s", resp.Status, string(body))
+		return "", fmt.Errorf("%s — %s", resp.Status, ghErrorBody(resp))
 	}
 	var out struct {
 		Tree struct {
@@ -632,8 +631,7 @@ func (g *GitHubRelay) createBlob(ctx context.Context, content []byte) (string, e
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		raw, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("%s — %s", resp.Status, string(raw))
+		return "", fmt.Errorf("%s — %s", resp.Status, ghErrorBody(resp))
 	}
 	var out struct {
 		SHA string `json:"sha"`
@@ -661,8 +659,7 @@ func (g *GitHubRelay) createTree(ctx context.Context, baseTree string, entries a
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		raw, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("%s — %s", resp.Status, string(raw))
+		return "", fmt.Errorf("%s — %s", resp.Status, ghErrorBody(resp))
 	}
 	var out struct {
 		SHA string `json:"sha"`
@@ -693,8 +690,7 @@ func (g *GitHubRelay) createCommit(ctx context.Context, message, treeSHA string,
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		raw, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("%s — %s", resp.Status, string(raw))
+		return "", fmt.Errorf("%s — %s", resp.Status, ghErrorBody(resp))
 	}
 	var out struct {
 		SHA string `json:"sha"`
@@ -721,13 +717,33 @@ func (g *GitHubRelay) updateRef(ctx context.Context, branch, commitSHA string) e
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		raw, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%s — %s", resp.Status, string(raw))
+		return fmt.Errorf("%s — %s", resp.Status, ghErrorBody(resp))
 	}
 	return nil
 }
 
 // --- HTTP plumbing ----------------------------------------------------------
+
+// ghErrorBody reads a short, log-safe error body from a non-2xx GitHub
+// response. GitHub's 5xx pages ("Unicorn") are full HTML documents — we
+// don't want them in the log. Truncate to 200 chars and replace HTML
+// blobs with a one-line summary.
+func ghErrorBody(resp *http.Response) string {
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+	return trimErrBody(string(raw))
+}
+
+func trimErrBody(s string) string {
+	s = strings.TrimSpace(s)
+	lower := strings.ToLower(s)
+	if strings.HasPrefix(lower, "<!doctype") || strings.HasPrefix(lower, "<html") {
+		return "(HTML response — GitHub backend issue, retry later)"
+	}
+	if len(s) > 200 {
+		s = s[:200] + "…"
+	}
+	return s
+}
 
 func (g *GitHubRelay) newReq(ctx context.Context, method, urlPath string, body io.Reader) (*http.Request, error) {
 	full := strings.TrimRight(githubAPI, "/") + urlPath

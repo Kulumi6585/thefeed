@@ -51,6 +51,7 @@ type channelFetchStats struct {
 type reportEvent struct {
 	channel  uint16
 	resolver string
+	invalid  bool // GetBlock failed for this query
 }
 
 type hourlyFetchReport struct {
@@ -59,6 +60,7 @@ type hourlyFetchReport struct {
 	metadataQueries int64
 	versionQueries  int64
 	mediaQueries    int64 // queries that landed in the media-blob channel range
+	invalidQueries  int64 // GetBlock returned an error (unknown ch / blk OOR)
 	perChannel      map[uint16]*channelFetchStats
 	perResolver     map[string]int64
 }
@@ -197,7 +199,11 @@ func (s *DNSServer) handleQuery(w dns.ResponseWriter, r *dns.Msg) {
 
 	data, err := s.feed.GetBlock(int(channel), int(block))
 	if err != nil {
-		log.Printf("[dns] get block ch=%d blk=%d: %v", channel, block, err)
+		// Don't log: there's a known protocol limitation where the metadata
+		// channel doesn't carry a total-block count, so clients sometimes
+		// over-fetch and ask for blocks/channels that don't exist. Counter
+		// in the hourly report is enough.
+		s.trackInvalidQuery()
 		m.Rcode = dns.RcodeNameError
 		w.WriteMsg(m)
 		return
@@ -656,6 +662,13 @@ func (s *DNSServer) trackRequestStart(channel uint16, resolver string) {
 	s.reportCh <- reportEvent{channel: channel, resolver: resolver}
 }
 
+func (s *DNSServer) trackInvalidQuery() {
+	select {
+	case s.reportCh <- reportEvent{invalid: true}:
+	default:
+	}
+}
+
 func (s *DNSServer) runHourlyReports(ctx context.Context) {
 	rep := newHourlyFetchReport(time.Now())
 	ticker := time.NewTicker(1 * time.Hour)
@@ -684,6 +697,10 @@ func newHourlyFetchReport(start time.Time) *hourlyFetchReport {
 }
 
 func recordReportQuery(rep *hourlyFetchReport, event reportEvent) {
+	if event.invalid {
+		rep.invalidQueries++
+		return
+	}
 	rep.totalQueries++
 	if event.resolver != "" {
 		rep.perResolver[event.resolver]++
@@ -778,6 +795,7 @@ func (s *DNSServer) emitHourlyReport(rep *hourlyFetchReport, final bool) {
 		"totalMetadataQueries": rep.metadataQueries,
 		"totalVersionQueries":  rep.versionQueries,
 		"totalMediaQueries":    rep.mediaQueries,
+		"totalInvalidQueries":  rep.invalidQueries,
 		"channels":             entries,
 		"topResolvers":         resolvers,
 		"finalFlush":           final,

@@ -77,13 +77,27 @@ class AndroidBridge(private val activity: Activity) {
     fun openMedia(base64: String, mime: String, filename: String): Boolean {
         return try {
             val uri = writeToCache(base64, filename)
+            val resolvedMime = mimeFromFilename(filename, mime)
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, sanitiseMime(mime))
+                setDataAndType(uri, resolvedMime)
+                putExtra(Intent.EXTRA_TITLE, filename)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            activity.startActivity(Intent.createChooser(intent, filename))
+            // Try the user's default for this MIME first. Android only
+            // shows a chooser if no default is set; that's the right
+            // behaviour for "play" — we want the actual video player,
+            // not a generic file-handler picker that might copy/download.
+            try {
+                activity.startActivity(intent)
+            } catch (_: Exception) {
+                activity.startActivity(Intent.createChooser(intent, filename))
+            }
             true
-        } catch (_: Exception) { false }
+        } catch (e: Exception) {
+            Log.e(TAG, "openMedia failed", e)
+            toast("Open failed: ${e.message}")
+            false
+        }
     }
 
     @JavascriptInterface
@@ -91,7 +105,7 @@ class AndroidBridge(private val activity: Activity) {
         return try {
             val uri = writeToCache(base64, filename)
             val intent = Intent(Intent.ACTION_SEND).apply {
-                type = sanitiseMime(mime)
+                type = mimeFromFilename(filename, mime)
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -111,7 +125,7 @@ class AndroidBridge(private val activity: Activity) {
                 val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
                 val values = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, safe)
-                    put(MediaStore.MediaColumns.MIME_TYPE, sanitiseMime(mime))
+                    put(MediaStore.MediaColumns.MIME_TYPE, mimeFromFilename(safe, mime))
                     put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                     put(MediaStore.MediaColumns.IS_PENDING, 1)
                 }
@@ -170,6 +184,45 @@ class AndroidBridge(private val activity: Activity) {
 
     private fun sanitiseMime(m: String): String {
         return if (m.matches(Regex("^[\\w./+-]+$"))) m else "application/octet-stream"
+    }
+
+    // Derive a MIME type from the filename's extension. When the bytes
+    // were sniffed by Go's http.DetectContentType (e.g., APK files come
+    // back as application/zip because APKs ARE zips), passing that MIME
+    // to MediaStore would make Android append ".zip" to the filename.
+    // Trusting the extension fixes the *.apk.zip / *.docx.zip surprise.
+    private fun mimeFromFilename(name: String, fallback: String): String {
+        val dot = name.lastIndexOf('.')
+        if (dot < 0 || dot == name.length - 1) return sanitiseMime(fallback)
+        val ext = name.substring(dot + 1).lowercase()
+        return when (ext) {
+            "apk" -> "application/vnd.android.package-archive"
+            "pdf" -> "application/pdf"
+            "zip" -> "application/zip"
+            "mp3" -> "audio/mpeg"
+            "ogg", "oga", "opus" -> "audio/ogg"
+            "wav" -> "audio/wav"
+            "m4a" -> "audio/mp4"
+            "mp4", "m4v" -> "video/mp4"
+            "webm" -> "video/webm"
+            "mkv" -> "video/x-matroska"
+            "mov" -> "video/quicktime"
+            "jpg", "jpeg" -> "image/jpeg"
+            "png" -> "image/png"
+            "gif" -> "image/gif"
+            "webp" -> "image/webp"
+            "svg" -> "image/svg+xml"
+            "txt" -> "text/plain"
+            "html", "htm" -> "text/html"
+            "json" -> "application/json"
+            "doc" -> "application/msword"
+            "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            "xls" -> "application/vnd.ms-excel"
+            "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            "ppt" -> "application/vnd.ms-powerpoint"
+            "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            else -> sanitiseMime(fallback)
+        }
     }
 
     private fun sha256(input: String): String {

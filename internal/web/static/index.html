@@ -843,6 +843,17 @@
       user-select: none
     }
 
+    .media-lightbox-video {
+      max-width: 100%;
+      max-height: 100%;
+      outline: none;
+    }
+
+    .media-lightbox-audio {
+      width: min(420px, 90vw);
+      outline: none;
+    }
+
     .media-lightbox-close {
       position: absolute;
       top: 12px;
@@ -2548,7 +2559,7 @@
         server_fetch_wait: 'سرور در حال دریافت اطلاعات جدید از تلگرام',
         no_messages_hint: 'برنامه در حال دریافت پیام‌ها است. لطفاً چند لحظه صبر کنید...',
         download: 'دانلود', media_too_large: 'حجم فایل بیش از حد مجاز سرور است', media_failed: 'دانلود ناموفق بود',
-        downloading: 'در حال دانلود...', media_open: 'باز کردن', media_save: 'ذخیره', media_share: 'اشتراک‌گذاری', close: 'بستن',
+        downloading: 'در حال دانلود...', media_open: 'باز کردن', media_play: 'پخش', media_save: 'ذخیره', media_share: 'اشتراک‌گذاری', close: 'بستن',
         queued: 'در صف', media_hash_mismatch: 'هش محتوا با پیام مطابقت ندارد',
         blocks_label: 'بلاک',
         media_blocked_title: 'برای دانلود در دسترس نیست',
@@ -2593,7 +2604,7 @@
         auto_update_off: 'به‌روزرسانی خودکار برای @{name} خاموش شد',
         media_relay_fallback: 'دانلود از مسیر سریع نشد. از مسیر کند (DNS) امتحان کنیم؟ توجه: ممکن است خیلی کند باشد.',
         media_slow_only: 'رله گیتهاب در دسترس نیست. دانلود از مسیر DNS خیلی کند است. ادامه می‌دهی؟',
-        media_rate_limited: 'به محدودیت تعداد درخواست گیتهاب رسیدی. حدود {n} دقیقه دیگه دوباره فعال میشه. حالا از مسیر کند (DNS) دانلود کنیم؟',
+        media_rate_limited: 'محدودیت گیتهاب پر شد ({n} دقیقه تا ریست). از مسیر DNS ادامه می‌دهیم.',
         media_rate_limited_short: 'محدودیت تعداد درخواست گیتهاب',
         media_size_mismatch: 'سایز فایل با چیزی که سرور گفته بود نمی‌خونه',
         clear_cache: 'پاک کردن کش', clear_cache_btn: '🗑 پاک کردن کش', cache_cleared: 'کش پاک شد!',
@@ -2717,7 +2728,7 @@
         server_fetch_wait: 'Server fetching fresh data from Telegram',
         no_messages_hint: 'The app is trying to fetch messages. Please wait a moment...',
         download: 'Download', media_too_large: 'Too large for server cache', media_failed: 'Download failed',
-        downloading: 'Downloading...', media_open: 'Open', media_save: 'Save', media_share: 'Share', close: 'Close',
+        downloading: 'Downloading...', media_open: 'Open', media_play: 'Play', media_save: 'Save', media_share: 'Share', close: 'Close',
         queued: 'Queued', media_hash_mismatch: 'Content hash does not match the message',
         blocks_label: 'blocks',
         media_blocked_title: 'Not available for download',
@@ -2762,7 +2773,7 @@
         auto_update_off: 'Auto-update is now OFF for @{name}',
         media_relay_fallback: 'Fast relay failed. Try the slow DNS path? Note: this can be very slow.',
         media_slow_only: 'GitHub relay is unavailable for this file. The DNS path is very slow. Download anyway?',
-        media_rate_limited: 'GitHub rate limit hit. Resets in about {n} min. Try the slow DNS path now?',
+        media_rate_limited: 'GitHub rate limit hit ({n} min until reset). Falling back to slow DNS path.',
         media_rate_limited_short: 'GitHub rate limit',
         media_size_mismatch: 'Downloaded size doesn\'t match the manifest',
         clear_cache: 'Clear Cache', clear_cache_btn: '🗑 Clear Cache', cache_cleared: 'Cache cleared!',
@@ -3355,7 +3366,9 @@
           await selectChannel(1); return
         }
         if (data && typeof data === 'object' && data.type === 'no_changes') {
-          showToast(t('no_new_messages'));
+          // Only show the toast if the user is still viewing the channel
+          // that reported no changes — silently drop it if they switched.
+          if (data.channel === selectedChannel) showToast(t('no_new_messages'));
           if (snapChannel > 0) { delete refreshingChannels[snapChannel]; var fb = document.getElementById('prog-fetch-ch-' + snapChannel); if (fb) fb.remove() }
         } else if (data && typeof data === 'object' && data.channel) {
           delete refreshingChannels[data.channel]; var fb2 = document.getElementById('prog-fetch-ch-' + data.channel); if (fb2) fb2.remove();
@@ -4258,6 +4271,10 @@
       return tag === '[IMAGE]' || tag === '[STICKER]' || tag === '[GIF]';
     }
 
+    function mediaIsPlayableTag(tag) {
+      return tag === '[VIDEO]' || tag === '[AUDIO]' || tag === '[VOICE]';
+    }
+
     function mediaExtForTag(tag, mime) {
       if (mime) {
         if (/^image\/(jpeg|jpg)$/i.test(mime)) return 'jpg';
@@ -4425,9 +4442,9 @@
       }
     }
 
-    // GH_MAX_RETRIES + GH_RETRY_DELAY_MS govern the fast-path retry budget
-    // before we ask the user whether to fall back to slow DNS.
-    var GH_MAX_RETRIES = 3, GH_RETRY_DELAY_MS = 800;
+    // Single quick retry on transient errors (network blip, 5xx). 404 / 429
+    // skip retry entirely — file genuinely missing or rate-limited.
+    var GH_MAX_RETRIES = 2, GH_RETRY_DELAY_MS = 500;
 
     async function mediaRunDownload(domID, opts) {
       opts = opts || {};
@@ -4521,18 +4538,17 @@
             await handleRateLimit(resetMin);
             return;
           }
-          if (source === 'fast') { handleFastFailure(xhr.statusText || ('HTTP ' + xhr.status)); return; }
+          if (source === 'fast') { handleFastFailure(xhr.statusText || ('HTTP ' + xhr.status), xhr.status); return; }
           mediaShowError(card, xhr.statusText || ('HTTP ' + xhr.status));
         }
       }
       async function handleRateLimit(resetMin) {
         var minutes = (resetMin && resetMin > 0) ? resetMin : '?';
-        var msg = (t('media_rate_limited') || 'GitHub rate limit hit. Reset in {n} min. Try the slow DNS path?').replace('{n}', minutes);
+        var msg = (t('media_rate_limited') || 'GitHub rate limit hit. Reset in {n} min — using slow path.').replace('{n}', minutes);
+        showToast(msg);
         if (dnsAvail) {
-          var ok = await showConfirmDialog(msg, t('yes') || 'Yes', t('no') || 'No');
-          if (ok) { restartWith('slow'); return; }
-        } else {
-          await showInfoDialog(msg, t('ok') || 'OK');
+          restartWith('slow');
+          return;
         }
         mediaShowError(card, t('media_rate_limited_short') || 'Rate limited');
         finishSlot();
@@ -4556,15 +4572,17 @@
           deliverBlob().finally(finishSlot);
         }
       };
-      async function handleFastFailure(reason) {
+      async function handleFastFailure(reason, status) {
         attempt++;
-        if (attempt < GH_MAX_RETRIES) {
-          // Quiet retry — leave the bar alone.
+        // 404 = file not in repo (won't materialise on retry).
+        // 429 = rate limit (already handled separately).
+        // Skipping retries here protects the 60/h API budget.
+        var skipRetry = (status === 404 || status === 429);
+        if (!skipRetry && attempt < GH_MAX_RETRIES) {
           await new Promise(function (r) { setTimeout(r, GH_RETRY_DELAY_MS); });
           var retry = new XMLHttpRequest();
           retry.responseType = 'blob';
           retry.open('GET', url);
-          // Reuse the same handlers by swapping the underlying xhr.
           retry.onprogress = xhr.onprogress;
           retry.onload = xhr.onload;
           retry.onerror = xhr.onerror;
@@ -4815,15 +4833,19 @@
 
     function buildMediaActions(msgID, tag) {
       var isImage = mediaIsImageTag(tag);
-      // On Android the native bridge always handles share, so we always
-      // show the share button there — unlike browser path which needs
-      // navigator.canShare support.
+      var isPlayable = mediaIsPlayableTag(tag);
       var canShare = !!androidBridge || !!(navigator.share && navigator.canShare);
       var openTitle = esc(t('media_open') || 'Open');
+      var playTitle = esc(t('media_play') || 'Play');
       var saveTitle = esc(t('media_save') || 'Save');
       var shareTitle = esc(t('media_share') || 'Share');
       var html = '';
-      if (!isImage) {
+      if (isPlayable) {
+        // Play icon (▶) — on Android Intent.createChooser picks the
+        // best system video/audio player; on browser the blob opens in a
+        // new tab where the browser's native viewer handles it.
+        html += '<button class="media-action-icon" onclick="mediaOpen(\'' + msgID + '\')" title="' + playTitle + '" aria-label="' + playTitle + '">&#9654;</button>';
+      } else if (!isImage) {
         html += '<button class="media-action-icon" onclick="mediaOpen(\'' + msgID + '\')" title="' + openTitle + '" aria-label="' + openTitle + '">&#128279;</button>';
       }
       html += '<button class="media-action-icon" onclick="mediaSave(\'' + msgID + '\')" title="' + saveTitle + '" aria-label="' + saveTitle + '">&#128190;</button>';
@@ -4850,6 +4872,13 @@
         } catch (e) { }
         return;
       }
+      // Browser path: play video/audio inline in a lightbox instead of
+      // opening a blob URL in a new tab — some browsers refuse to render
+      // blob:video and download it as a hash-named file with no extension.
+      if (mediaIsPlayableTag(tag)) {
+        showMediaPlayer(entry, tag);
+        return;
+      }
       try {
         var a = document.createElement('a');
         a.href = entry.url;
@@ -4860,6 +4889,36 @@
         a.click();
         a.remove();
       } catch (e) { }
+    }
+
+    function showMediaPlayer(entry, tag) {
+      var existing = document.getElementById('mediaLightbox');
+      if (existing) existing.remove();
+      var isAudio = (tag === '[AUDIO]' || tag === '[VOICE]');
+      var mime = entry.mime || (isAudio ? 'audio/mpeg' : 'video/mp4');
+      var element = isAudio
+        ? '<audio class="media-lightbox-audio" controls autoplay src="' + escAttr(entry.url) + '" type="' + escAttr(mime) + '"></audio>'
+        : '<video class="media-lightbox-video" controls autoplay playsinline src="' + escAttr(entry.url) + '" type="' + escAttr(mime) + '"></video>';
+      var overlay = document.createElement('div');
+      overlay.id = 'mediaLightbox';
+      overlay.className = 'media-lightbox';
+      overlay.innerHTML = '<button class="media-lightbox-close" type="button" aria-label="' + esc(t('close') || 'Close') + '">&times;</button>' + element;
+      var close = function () {
+        overlay.removeEventListener('click', onClick);
+        document.removeEventListener('keydown', onKey);
+        var media = overlay.querySelector('audio,video');
+        if (media) { try { media.pause(); } catch (e) { } }
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      };
+      var onClick = function (e) {
+        if (e.target === overlay || (e.target.classList && e.target.classList.contains('media-lightbox-close'))) {
+          close();
+        }
+      };
+      var onKey = function (e) { if (e.key === 'Escape') close(); };
+      overlay.addEventListener('click', onClick);
+      document.addEventListener('keydown', onKey);
+      document.body.appendChild(overlay);
     }
 
     function mediaFilenameFor(msgID, tag, mime) {

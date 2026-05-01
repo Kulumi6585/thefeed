@@ -123,7 +123,7 @@ func SanitiseMediaFilename(s string) string {
 		return ""
 	}
 
-	const maxBase = 24
+	const maxBase = 64
 	const maxExt = 8
 
 	base, ext := splitFilenameExt(cleaned)

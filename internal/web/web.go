@@ -1970,6 +1970,9 @@ func (s *Server) loadProfiles() (*ProfileList, error) {
 }
 
 func (s *Server) saveProfiles(pl *ProfileList) error {
+	if err := os.MkdirAll(s.dataDir, 0700); err != nil {
+		return err
+	}
 	path := filepath.Join(s.dataDir, "profiles.json")
 	data, err := json.MarshalIndent(pl, "", "  ")
 	if err != nil {
