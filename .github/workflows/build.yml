@@ -80,10 +80,19 @@ jobs:
           VERSION=${GITHUB_REF_NAME:-dev}
           COMMIT=$(git rev-parse --short HEAD)
           DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          LDFLAGS="-s -w -X github.com/sartoopjj/thefeed/internal/version.Version=${VERSION} -X github.com/sartoopjj/thefeed/internal/version.Commit=${COMMIT} -X github.com/sartoopjj/thefeed/internal/version.Date=${DATE}"
           ext=""
           BUILD_MODE=""
           if [ "${{ matrix.goos }}" = "windows" ]; then ext=".exe"; fi
+          # AssetTemplate matches the published filename in the
+          # thefeed-files repo so the in-app update prompt links straight
+          # to the right binary. {V} is replaced at runtime with the
+          # version string read from the public VERSION file.
+          if [ "${{ matrix.goos }}" = "android" ]; then
+            ASSET_TEMPLATE="thefeed-client-android-${{ matrix.goarch }}"
+          else
+            ASSET_TEMPLATE="thefeed-client-{V}-${{ matrix.goos }}-${{ matrix.goarch }}${ext}"
+          fi
+          LDFLAGS="-s -w -X github.com/sartoopjj/thefeed/internal/version.Version=${VERSION} -X github.com/sartoopjj/thefeed/internal/version.Commit=${COMMIT} -X github.com/sartoopjj/thefeed/internal/version.Date=${DATE} -X github.com/sartoopjj/thefeed/internal/version.AssetTemplate=${ASSET_TEMPLATE}"
           # Modern Android requires PIE for executables launched via exec(),
           # and several heuristic AV engines (Kaspersky Boogr.gsh,
           # several VT vendors) flag non-PIE bundled binaries as suspicious.

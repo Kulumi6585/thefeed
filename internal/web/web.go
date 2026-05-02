@@ -24,6 +24,7 @@ import (
 
 	"github.com/sartoopjj/thefeed/internal/client"
 	"github.com/sartoopjj/thefeed/internal/protocol"
+	"github.com/sartoopjj/thefeed/internal/update"
 	"github.com/sartoopjj/thefeed/internal/version"
 )
 
@@ -264,6 +265,7 @@ func (s *Server) Run() error {
 	mux.HandleFunc("/api/auto-update/toggle", s.handleAutoUpdateToggle)
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/version-check", s.handleVersionCheck)
+	mux.HandleFunc("/api/update/github", s.handleGitHubUpdateCheck)
 	mux.HandleFunc("/api/cache/clear", s.handleClearCache)
 	mux.HandleFunc("/api/bg-image", s.handleBgImage)
 	mux.HandleFunc("/api/resolvers/apply-saved", s.handleApplySavedResolvers)
@@ -2579,6 +2581,25 @@ func (s *Server) handleVersionCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, map[string]any{"ok": true, "latestVersion": v})
+}
+
+// handleGitHubUpdateCheck queries the public thefeed-files repo for the
+// latest published client version and returns a download URL tailored
+// to this binary's platform. Independent of the DNS-protocol version
+// check above — works without a configured profile.
+func (s *Server) handleGitHubUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
+	defer cancel()
+	st, err := update.Check(ctx)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("update check failed: %v", err), 502)
+		return
+	}
+	writeJSON(w, st)
 }
 
 // runMediaCacheSweep evicts expired media-cache entries every hour for the

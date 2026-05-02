@@ -81,6 +81,9 @@ class ThefeedService : Service() {
                 val env = mutableMapOf<String, String>()
                 env["HOME"] = filesDir.absolutePath
                 env["TMPDIR"] = cacheDir.absolutePath
+                // Tells internal/update to point the user at the APK on
+                // GitHub instead of the bare client binary.
+                env["THEFEED_ANDROID_APK"] = "1"
 
                 val pb = ProcessBuilder(
                     bin.absolutePath,

@@ -2219,9 +2219,11 @@
           <span data-i18n="latest_version">Latest Version</span>
           <span id="latestVersionEl">-</span>
         </div>
-        <div class="settings-info-row">
+        <div class="settings-info-row" style="display:flex;gap:6px">
           <button class="btn btn-outline btn-sm" id="checkVersionBtn" onclick="checkLatestVersion()"
-            data-i18n="check_now" style="width:100%">Check Now</button>
+            data-i18n="check_now" style="flex:1">Check Now</button>
+          <button class="btn btn-outline btn-sm" id="checkGitHubBtn" onclick="checkGitHubUpdate(true)"
+            data-i18n="check_github" style="flex:1">Check on GitHub</button>
         </div>
         <div class="settings-info-row">
           <button class="btn btn-flat btn-sm" onclick="clearCache()"
@@ -2585,9 +2587,14 @@
         latest_version: 'آخرین نسخه قابل دانلود',
         check_latest_version: 'بررسی نسخه جدید',
         check_now: 'بررسی',
+        check_github: 'بررسی در گیتهاب',
         checking_version: 'در حال بررسی...',
         version_up_to_date: 'نسخه شما به‌روز است: {v}',
         version_check_failed: 'بررسی نسخه ناموفق بود',
+        update_check_failed: 'بررسی به‌روزرسانی ناموفق بود',
+        update_download_hint: 'برای دانلود نسخه جدید روی دکمه زیر کلیک کنید:',
+        update_download_btn: 'دانلود',
+        update_later_btn: 'بعداً',
         channel_mgmt_note: 'قابلیت مدیریت کانال نیاز به فعال سازی سمت سرور دارد. اگر توسط ادمین غیرفعال شده باشد، افزودن/حذف کار نمی\u200cکند.',
         channel_mgmt_inactive: 'برای مدیریت کانال\u200cها، ابتدا این پروفایل را فعال کنید.',
         channel_placeholder: 'نام کاربری کانال',
@@ -2758,9 +2765,14 @@
         latest_version: 'Latest Version',
         check_latest_version: 'Check for Updates',
         check_now: 'Check Now',
+        check_github: 'Check on GitHub',
         checking_version: 'Checking...',
         version_up_to_date: 'You are up to date: {v}',
         version_check_failed: 'Version check failed',
+        update_check_failed: 'Update check failed',
+        update_download_hint: 'Click the button below to download the new version:',
+        update_download_btn: 'Download',
+        update_later_btn: 'Later',
         channel_mgmt_note: 'Channel management requires server-side support. If disabled by the server admin, adding/removing channels will not work.',
         channel_mgmt_inactive: 'Switch to this profile first to manage its channels.',
         channel_placeholder: 'channel_username',
@@ -2998,6 +3010,10 @@
       loadBgImage();
       connectSSE();
       refreshResolversBadge();
+      // Quietly ask GitHub for the latest published client version. Runs in
+      // the background so a slow github.com response can't delay startup —
+      // if there's an update, the dialog shows up a few seconds later.
+      checkGitHubUpdate(false).catch(function () { });
       try {
         var r = await fetch('/api/status'); var st = await r.json();
         await loadProfiles();
@@ -3254,6 +3270,74 @@
         document.getElementById('passwordSetSection').style.display = '';
         showToast(t('password_enter_new'));
       } catch (e) { }
+    }
+
+    // checkGitHubUpdate hits /api/update/github (which fetches the VERSION
+    // file from the public thefeed-files repo) and prompts the user with
+    // a download link tailored to their platform. `manual=true` shows a
+    // toast on "no update", `manual=false` stays silent.
+    async function checkGitHubUpdate(manual) {
+      try {
+        var r = await fetch('/api/update/github');
+        if (!r.ok) {
+          if (manual) showToast(t('update_check_failed') || 'Update check failed');
+          return;
+        }
+        var data = await r.json();
+        if (!data || !data.latest) return;
+        latestVersion = data.latest;
+        renderLatestVersion();
+        if (data.hasUpdate && data.downloadURL) {
+          if (!manual) {
+            // Don't nag the same user about the same version twice.
+            var seenKey = 'thefeed_seen_gh_update_' + normalizeVersion(data.latest);
+            if (localStorage.getItem(seenKey) === '1') return;
+            localStorage.setItem(seenKey, '1');
+          }
+          showUpdateDialog(data.latest, data.downloadURL);
+        } else if (manual) {
+          showToast((t('version_up_to_date') || 'Up to date: {v}').replace('{v}', data.latest));
+        }
+      } catch (e) {
+        if (manual) showToast(e.message || t('update_check_failed') || 'Update check failed');
+      }
+    }
+
+    function showUpdateDialog(newVersion, url) {
+      // Re-use the existing modal styling. Two buttons: download (opens
+      // the binary URL in a new tab / hands off to system app on Android)
+      // and later (just dismisses).
+      var msg = (t('update_available') || 'New version available: {v}').replace('{v}', newVersion);
+      var hint = t('update_download_hint') || 'Download the new version below.';
+      var dl = t('update_download_btn') || 'Download';
+      var later = t('update_later_btn') || 'Later';
+      var overlay = document.createElement('div');
+      overlay.className = 'modal-overlay active';
+      overlay.innerHTML = '<div class="modal" style="max-width:380px">'
+        + '<h2 style="margin-top:0">' + esc(msg) + '</h2>'
+        + '<p style="font-size:13px;color:var(--text-dim);margin-bottom:12px;line-height:1.6">' + esc(hint) + '</p>'
+        + '<p style="font-size:11px;color:var(--text-dim);margin-bottom:16px;word-break:break-all"><code>' + esc(url) + '</code></p>'
+        + '<div class="modal-actions">'
+        + '  <button class="btn btn-flat" id="updateLater">' + esc(later) + '</button>'
+        + '  <button class="btn btn-primary" id="updateDownload">' + esc(dl) + '</button>'
+        + '</div></div>';
+      document.body.appendChild(overlay);
+      document.getElementById('updateLater').onclick = function () {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      };
+      document.getElementById('updateDownload').onclick = function () {
+        try {
+          var a = document.createElement('a');
+          a.href = url;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.style.display = 'none';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        } catch (e) { }
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      };
     }
 
     async function checkLatestVersion() {
