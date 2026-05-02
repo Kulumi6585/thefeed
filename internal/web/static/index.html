@@ -35,6 +35,7 @@
       --error: #e53935;
       --send-color: #3390ec;
       --msg-in: #182533;
+      --msg-out: #2b5278;
       --hover: #1e2c3a;
       --font-size: 14px;
       --safe-top: env(safe-area-inset-top);
@@ -66,6 +67,7 @@
       --error: #e53935;
       --send-color: #3390ec;
       --msg-in: #ffffff;
+      --msg-out: #d3eafe;
       --hover: #e8eaed;
     }
 
@@ -619,6 +621,34 @@
        fills the bubble's content area edge-to-edge (within padding). */
     .msg.has-media {
       max-width: min(95%, 402px)
+    }
+
+    /* Outgoing private-chat messages — right-aligned bubble with
+       its own colour and the [YOU] label inside, mirroring the
+       chat-app convention so the user can tell their replies apart
+       from the contact's at a glance. */
+    .msg.msg-outgoing {
+      align-self: flex-end;
+      background: var(--msg-out);
+      border-bottom-left-radius: 12px;
+      border-bottom-right-radius: 4px
+    }
+
+    .you-tag {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      padding: 1px 7px;
+      margin-bottom: 4px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.18);
+      color: #fff
+    }
+
+    :root[data-theme="light"] .you-tag {
+      background: rgba(0, 0, 0, 0.08);
+      color: var(--text)
     }
 
     .msg.has-media .media-card,
@@ -1534,6 +1564,306 @@
       flex-wrap: wrap
     }
 
+    /* Small "i" button next to a modal title that toggles a hidden
+       description block. Replaces always-shown info-notes that bloat
+       the modal vertically. */
+    .title-info-btn {
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      background: transparent;
+      color: var(--text-dim);
+      font-size: 12px;
+      font-style: italic;
+      font-family: serif;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      transition: color 120ms, border-color 120ms, background 120ms
+    }
+
+    .title-info-btn:hover,
+    .title-info-btn[aria-expanded="true"] {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: var(--card-bg)
+    }
+
+    /* Bank-row action buttons (+ / ✕). Sized 32×32 with a real
+       border so they're easy to tap on touch screens; spaced apart
+       so a stray tap on "+" doesn't hit "✕". */
+    .rb-row-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: transparent;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      transition: background 120ms, border-color 120ms, color 120ms
+    }
+
+    .rb-row-btn + .rb-row-btn {
+      margin-inline-start: 8px
+    }
+
+    .rb-row-add {
+      color: var(--accent)
+    }
+
+    .rb-row-add:hover {
+      background: var(--card-bg);
+      border-color: var(--accent)
+    }
+
+    .rb-row-del {
+      color: var(--error)
+    }
+
+    .rb-row-del:hover {
+      background: var(--card-bg);
+      border-color: var(--error)
+    }
+
+    /* Resolver Bank modal header — title + (i) on one side, Bank
+       chip on the other. */
+    .resolver-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      justify-content: space-between;
+      margin-bottom: 12px
+    }
+
+    .resolver-header h2 {
+      flex: 1;
+      min-width: 0
+    }
+
+    /* ===== RESOLVER LIST TABS ===== */
+    /* Tabs strip that lives at the top of the Resolver Bank modal.
+       Lists, "+" and Bank are arranged in two visually distinct
+       groups: lists scroll horizontally on narrow screens and look
+       like chips; Bank is pinned to the trailing edge with its own
+       chip style because it points to the master pool, not a list. */
+    .resolver-tabs-wrap {
+      position: relative;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px
+    }
+
+    /* The scrolling strip uses a CSS-only "scroll shadow" trick that
+       fades the trailing edge into the modal surface, hinting that
+       there's more content to scroll. The fade soft-edges the visible
+       content on both sides so a user who's never noticed horizontal
+       scroll has an obvious cue. */
+    .resolver-tabs {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: thin;
+      flex: 1;
+      min-width: 0;
+      padding: 2px 0;
+      -webkit-mask-image: linear-gradient(90deg, transparent 0, black 14px, black calc(100% - 14px), transparent 100%);
+      mask-image: linear-gradient(90deg, transparent 0, black 14px, black calc(100% - 14px), transparent 100%)
+    }
+
+    .resolver-tabs::-webkit-scrollbar {
+      height: 4px
+    }
+
+    .resolver-tabs::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 2px
+    }
+
+    /* Each list-tab looks like a chip — a real button you can see,
+       even on a flat dark background. Hover/selected states stay
+       subtle but legible. */
+    .rtab {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 12px;
+      border: 1px solid var(--border);
+      background: var(--card-bg);
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      border-radius: 999px;
+      transition: background 120ms, border-color 120ms, color 120ms;
+      position: relative
+    }
+
+    .rtab:hover {
+      border-color: var(--accent)
+    }
+
+    .rtab-active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      font-weight: 600
+    }
+
+    .rtab-active:hover {
+      filter: brightness(1.1)
+    }
+
+    .rtab-count {
+      font-size: 11px;
+      padding: 1px 8px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.18);
+      color: inherit;
+      font-weight: 500;
+      min-width: 18px;
+      text-align: center
+    }
+
+    .rtab:not(.rtab-active) .rtab-count {
+      background: var(--bg);
+      color: var(--text-dim)
+    }
+
+    .rtab-active .rtab-count {
+      background: rgba(255, 255, 255, 0.22);
+      color: #fff
+    }
+
+    .rtab-menu-btn {
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      margin-inline-start: 2px;
+      border: none;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      opacity: 0.85
+    }
+
+    .rtab-menu-btn:hover {
+      opacity: 1;
+      background: rgba(255, 255, 255, 0.18)
+    }
+
+    /* Plus chip — dashed outline to read as "add new" without looking
+       like a regular list-tab. */
+    .rtab-add {
+      color: var(--text-dim);
+      font-size: 16px;
+      font-weight: 500;
+      padding: 7px 14px;
+      border-style: dashed;
+      background: transparent
+    }
+
+    .rtab-add:hover {
+      color: var(--accent);
+      background: var(--card-bg)
+    }
+
+    /* Bank "tab" sits outside the scrolling strip with its own look —
+       it's a different concept (master pool, not a saved list). */
+    .rtab-bank {
+      flex-shrink: 0;
+      padding: 7px 12px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text-dim);
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 120ms, border-color 120ms, color 120ms
+    }
+
+    .rtab-bank:hover {
+      border-color: var(--text-dim);
+      color: var(--text)
+    }
+
+    .rtab-bank.rtab-active {
+      background: var(--card-bg);
+      border-color: var(--text);
+      color: var(--text);
+      font-weight: 600
+    }
+
+    .rtab-bank-icon {
+      font-size: 14px;
+      line-height: 1
+    }
+
+    /* Inline rename / delete popover anchored to the selected tab's ⋮.
+       Uses fixed positioning so it sits at viewport coordinates derived
+       from getBoundingClientRect — avoids breaking when ancestors lose
+       position:relative or get a mask-image (which forms a containing
+       block at unexpected times). */
+    .resolver-tab-menu {
+      position: fixed;
+      z-index: 10001;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 4px;
+      min-width: 140px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35)
+    }
+
+    .resolver-tab-menu[hidden] {
+      display: none
+    }
+
+    .resolver-tab-menu button {
+      display: block;
+      width: 100%;
+      padding: 8px 12px;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      text-align: start;
+      cursor: pointer;
+      border-radius: 6px
+    }
+
+    .resolver-tab-menu button:hover {
+      background: var(--card-bg)
+    }
+
+    .resolver-tab-menu button:last-child:hover {
+      color: var(--error)
+    }
+
     /* ===== FORMS ===== */
     .form-group {
       margin-bottom: 12px
@@ -1765,32 +2095,6 @@
       display: flex;
       gap: 4px;
       flex-shrink: 0
-    }
-
-    .share-panel {
-      padding: 8px 10px;
-      background: var(--bg);
-      border-top: 1px solid var(--border)
-    }
-
-    .share-panel-inner {
-      display: flex;
-      gap: 6px;
-      align-items: center
-    }
-
-    .share-uri-input {
-      flex: 1;
-      padding: 6px 8px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--surface);
-      color: var(--accent);
-      font-family: monospace;
-      font-size: 11px;
-      direction: ltr;
-      text-align: left;
-      outline: none
     }
 
     .active-badge {
@@ -2072,6 +2376,8 @@
       border-radius: 2px
     }
   </style>
+  <!-- Lazy-loadable; only used when the share modal asks for QR. -->
+  <script src="/static/qrcode.js" defer></script>
 </head>
 
 <body>
@@ -2171,11 +2477,19 @@
     <div class="modal" style="max-width:380px">
       <h2 data-i18n="saved_resolvers_title">Quick Start</h2>
       <p id="savedResolversMsg" style="font-size:13px;color:var(--text-dim);margin-bottom:16px;line-height:1.6"></p>
+      <!-- "Don't show again" lives on its own row so it reads as a
+           secondary preference, not just another action button.
+           Toggling it sets a localStorage flag the user can clear
+           from Settings → Show startup scan prompt. -->
+      <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+        <button class="btn btn-flat" id="savedResolversNever" onclick="savedResolversNever()"
+          data-i18n="dont_show_again" style="font-size:11px;padding:4px 10px;color:var(--text-dim)">Don't show again</button>
+      </div>
       <div class="modal-actions">
         <button class="btn btn-flat" onclick="savedResolversSkip()" data-i18n="saved_resolvers_skip">Skip</button>
-        <button class="btn btn-outline" onclick="savedResolversRescan()" data-i18n="saved_resolvers_rescan">Scan
+        <button class="btn btn-outline" id="savedResolversRescanBtn" onclick="savedResolversRescan()" data-i18n="saved_resolvers_rescan">Scan
           Again</button>
-        <button class="btn btn-primary" onclick="savedResolversUseNow()" data-i18n="saved_resolvers_use">Use
+        <button class="btn btn-primary" id="savedResolversUseBtn" onclick="savedResolversUseNow()" data-i18n="saved_resolvers_use">Use
           Now</button>
       </div>
     </div>
@@ -2194,6 +2508,16 @@
         <div class="row">
           <input type="checkbox" id="cfgDebug">
           <label for="cfgDebug" data-i18n="debug_mode">Debug mode</label>
+        </div>
+      </div>
+      <!-- Re-enable the "Quick start" / scan prompt that appears on
+           launch. Mirrors localStorage thefeed_scan_prompt_off so the
+           user can opt back in after dismissing it via the prompt's
+           own "Don't show again" button. -->
+      <div class="form-group">
+        <div class="row">
+          <input type="checkbox" id="cfgShowScanPrompt" onchange="setShowScanPrompt(this.checked)">
+          <label for="cfgShowScanPrompt" data-i18n="show_scan_prompt">Show scan prompt on startup</label>
         </div>
       </div>
       <div class="form-group">
@@ -2291,6 +2615,7 @@
         </div>
         <div class="import-row">
           <input id="importUriInput" placeholder="thefeed://..." data-i18n-ph="import_uri_ph">
+          <button class="btn btn-flat btn-sm" type="button" onclick="pasteImportUri()" data-i18n-title="paste" title="Paste" aria-label="Paste" style="font-size:14px">&#128203;</button>
           <button class="btn btn-primary btn-sm" onclick="doImportUri()" data-i18n="import">Import</button>
         </div>
         <div id="importError" style="color:var(--error);font-size:12px;display:none;margin-top:6px"></div>
@@ -2305,12 +2630,50 @@
     </div>
   </div>
 
+  <!-- ===== SHARE PROFILE MODAL ===== -->
+  <!-- Standalone modal to keep the share UI from cramming the inline
+       profile row. Source dropdown picks Bank or any named list,
+       checkboxes filter individual resolvers, URI is copy-able, QR
+       renders the same URI for cross-device share. -->
+  <div class="modal-overlay" id="shareProfileModal">
+    <div class="modal" style="max-width:440px">
+      <h2 style="margin-top:0"><span data-i18n="share">Share</span> &middot; <span id="shareModalProfileName" style="color:var(--text-dim);font-weight:400"></span></h2>
+      <div class="form-group">
+        <label data-i18n="share_source">Source</label>
+        <select id="shareModalSource" onchange="reloadShareModalResolvers()"></select>
+      </div>
+      <div class="form-group">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <label style="margin:0" data-i18n="select_resolvers_export">Resolvers to include</label>
+          <div style="display:flex;gap:4px">
+            <button type="button" class="btn btn-flat" style="font-size:11px;padding:3px 8px" onclick="toggleAllShareModalResolvers(true)" data-i18n="select_all">All</button>
+            <button type="button" class="btn btn-flat" style="font-size:11px;padding:3px 8px" onclick="toggleAllShareModalResolvers(false)" data-i18n="select_none">None</button>
+          </div>
+        </div>
+        <div id="shareModalResolvers" style="max-height:160px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px;font-size:12px;font-family:monospace"></div>
+      </div>
+      <div class="form-group">
+        <label data-i18n="share_uri">Share URI</label>
+        <textarea id="shareModalUri" readonly rows="3" style="width:100%;font-family:monospace;font-size:12px;resize:vertical;box-sizing:border-box"></textarea>
+      </div>
+      <div id="shareModalQrWrap" style="display:none;text-align:center;margin-top:8px">
+        <div id="shareModalQr" style="display:inline-block;background:#fff;padding:10px;border-radius:8px"></div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:6px" data-i18n="share_qr_hint">Scan with another device to import</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-flat" onclick="closeShareModal()" data-i18n="close">Close</button>
+        <button class="btn btn-outline" id="shareModalQrBtn" onclick="toggleShareModalQr()" data-i18n="show_qr">Show QR</button>
+        <button class="btn btn-primary" onclick="copyShareModalUri()" data-i18n="copy">Copy</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== PROFILE EDITOR MODAL ===== -->
   <div class="modal-overlay" id="profileEditorModal">
     <div class="modal">
       <h2 id="profileEditorTitle" data-i18n="new_profile">New Profile</h2>
       <div id="peWarning" class="tg-warning"></div>
-      <div class="form-group"><label data-i18n="nickname">Nickname</label><input id="peNick" placeholder="My Server">
+      <div class="form-group"><label data-i18n="nickname">Nickname</label><input id="peNick" maxlength="32" placeholder="My Server">
       </div>
       <div class="form-group"><label data-i18n="domain">Domain</label><input id="peDomain" placeholder="t.example.com">
       </div>
@@ -2376,19 +2739,45 @@
   <!-- ===== RESOLVER BANK MODAL ===== -->
   <div class="modal-overlay" id="resolversModal">
     <div class="modal" style="max-width:600px">
-      <h2 data-i18n="resolvers_title">Resolver Bank</h2>
-      <div class="info-note" style="font-size:12px;line-height:1.5;margin-bottom:12px;padding:8px 12px;background:var(--card-bg);border-radius:8px;border:1px solid var(--border)">
+      <!-- Header row: title + (i) on the leading edge, Bank chip on
+           the trailing edge. Putting them together keeps the modal
+           compact and surfaces the Bank toggle without consuming a
+           second row of vertical space. -->
+      <div class="resolver-header">
+        <h2 style="margin:0;display:flex;align-items:center;gap:8px">
+          <span data-i18n="resolvers_title">Resolver Bank</span>
+          <button type="button" class="title-info-btn" id="resolverBankInfoBtn"
+            onclick="toggleResolverBankInfo()"
+            data-i18n-title="info" title="Info" aria-label="Info"
+            aria-controls="resolverBankInfoPanel" aria-expanded="false">i</button>
+        </h2>
+        <!-- Bank chip — populated by renderBankPill(). Lives in the
+             header so it doesn't crowd the list-tabs strip. -->
+        <div id="resolverBankSlot"></div>
+      </div>
+      <div class="info-note" id="resolverBankInfoPanel" hidden
+        style="font-size:12px;line-height:1.5;margin-bottom:12px;padding:8px 12px;background:var(--card-bg);border-radius:8px;border:1px solid var(--border)">
         <span data-i18n="resolver_bank_info">Resolvers are DNS servers used to connect to thefeed and fetch data. Use the Scanner to find new resolvers, or add them manually below.</span>
       </div>
-      <!-- Tabs -->
-      <div style="display:flex;gap:0;margin-bottom:12px;border-bottom:2px solid var(--border)">
-        <button class="btn btn-flat resolver-tab active" id="resolverTabActive" onclick="switchResolverTab('active')" style="border-radius:8px 8px 0 0;border-bottom:2px solid var(--accent);margin-bottom:-2px;font-weight:600;padding:8px 16px">
-          <span data-i18n="resolver_tab_active">Active</span> <span id="resolverActiveCount" class="stb-badge" style="margin-inline-start:4px">0</span>
-        </button>
-        <button class="btn btn-flat resolver-tab" id="resolverTabBank" onclick="switchResolverTab('bank')" style="border-radius:8px 8px 0 0;margin-bottom:-2px;padding:8px 16px">
-          <span data-i18n="resolver_tab_bank">Bank</span> <span id="resolverBankCount" class="stb-badge" style="margin-inline-start:4px">0</span>
-        </button>
+      <!-- List tabs — every named resolver list plus a "+" tab to
+           create new ones. Switching tabs hot-swaps the fetcher's
+           active resolvers. The selected list-tab shows a ⋮ inline
+           for rename / delete. Rendered by renderResolverTabs(). -->
+      <div class="resolver-tabs-wrap">
+        <div class="resolver-tabs" id="resolverTabs" role="tablist" aria-label="Resolver lists"></div>
       </div>
+      <!-- Inline tab menu (rename / delete) for the selected list-tab.
+           Positioned over the tab strip via JS so it can be dismissed
+           by clicking outside. -->
+      <div class="resolver-tab-menu" id="resolverTabMenu" role="menu" hidden>
+        <button type="button" onclick="renameCurrentResolverList()" data-i18n="rename" role="menuitem">Rename</button>
+        <button type="button" onclick="deleteCurrentResolverList()" data-i18n="delete" role="menuitem">Delete</button>
+      </div>
+      <!-- Bank → list picker. Opened by clicking "+" on a bank row.
+           Body is filled in dynamically with the user's named lists
+           plus the resolver address being added. Reuses
+           .resolver-tab-menu styling. -->
+      <div class="resolver-tab-menu" id="bankAddMenu" role="menu" hidden></div>
       <!-- Active resolvers panel -->
       <div id="resolverPanelActive" style="max-height:350px;overflow-y:auto;font-size:13px;margin-bottom:10px"></div>
       <!-- Bank resolvers panel -->
@@ -2520,14 +2909,14 @@
         </table>
       </div>
 
-      <!-- Action bar -->
+      <!-- Action bar — only "Add" remains. Overwrite was removed
+           because it desyncs named lists (lists kept references to
+           resolvers that the bank no longer had). Use Bank → ✕ to
+           prune individually; that path also propagates removals. -->
       <div id="scannerApplySection" style="display:none;margin-bottom:14px">
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-primary" style="flex:1;min-width:0;padding:10px 0;font-size:14px" onclick="applyScanResults('append')">
-            <span data-i18n="scanner_append">Append</span> <span id="scanAppendCount" style="opacity:.7"></span>
-          </button>
-          <button class="btn btn-outline" style="flex:1;min-width:0;padding:10px 0;font-size:14px" onclick="applyScanResults('overwrite')">
-            <span data-i18n="scanner_overwrite">Overwrite</span> <span id="scanOverwriteCount" style="opacity:.7"></span>
+            <span data-i18n="scanner_append">Add to bank</span> <span id="scanAppendCount" style="opacity:.7"></span>
           </button>
         </div>
         <div style="display:flex;gap:8px;margin-top:8px">
@@ -2585,6 +2974,40 @@
         scatter: 'تعداد ریزالور همزمان برای هر بلاک',
         update_available: 'نسخه جدید موجود است: {v}',
         latest_version: 'آخرین نسخه قابل دانلود',
+        save_current_list: 'لیست جدید',
+        info: 'توضیحات',
+        resolver_list_name_ph: 'نام لیست',
+        empty_list_scan_confirm: 'لیست «{n}» خالی است. می‌خواهی بانک را اسکن کنیم تا ریزالورهای فعال پیدا شوند؟',
+        empty_list_no_bank: 'این لیست و بانک هر دو خالی هستند. می‌توانی از قسمت بانک به‌صورت دستی ریزالور اضافه کنی یا از اسکنر استفاده کنی.',
+        scan: 'اسکن',
+        dont_show_again: 'دیگر نشان نده',
+        show_scan_prompt: 'نمایش اعلان اسکن در شروع برنامه',
+        startup_scan_msg: 'الان اسکن کنیم تا ریزالورهای فعال پیدا شوند؟',
+        startup_scan_off: 'اعلان اسکن غیرفعال شد',
+        add_to_list: 'افزودن به لیست',
+        no_lists: 'لیستی ذخیره نشده',
+        added_to_list: 'به «{n}» اضافه شد',
+        already_in_list: 'قبلاً در «{n}» وجود دارد',
+        add_failed: 'افزودن ناموفق بود',
+        share_source: 'منبع',
+        profile_name: 'نام پروفایل',
+        share_uri: 'پیوند اشتراک',
+        show_qr: 'نمایش QR',
+        hide_qr: 'پنهان کردن QR',
+        share_qr_hint: 'برای ایمپورت با دستگاه دیگر اسکن کن',
+        paste: 'چسباندن',
+        clipboard_blocked: 'دسترسی به کلیپ‌بورد ممکن نیست',
+        resolver_list_switch_failed: 'تغییر لیست ممکن نشد',
+        resolver_list_rename_prompt: 'نام جدید برای «{n}»',
+        resolver_list_delete_confirm: 'حذف «{n}»؟',
+        resolver_list_overwrite_confirm: 'لیستی با نام «{n}» وجود دارد. جایگزین شود؟',
+        resolver_list_name_prompt: 'نام لیست را وارد کنید:',
+        resolver_list_saved: '«{n}» ذخیره شد',
+        manage_lists: 'مدیریت',
+        rename: 'تغییر نام', delete: 'حذف', overwrite: 'جایگزینی',
+        rename_failed: 'تغییر نام ناموفق بود',
+        delete_failed: 'حذف ناموفق بود',
+        save_failed: 'ذخیره ناموفق بود',
         check_latest_version: 'بررسی نسخه جدید',
         check_now: 'بررسی',
         check_github: 'بررسی در گیتهاب',
@@ -2613,6 +3036,8 @@
         media_slow_only: 'رله گیتهاب در دسترس نیست. دانلود از مسیر DNS خیلی کند است. ادامه می‌دهی؟',
         media_rate_limited: 'محدودیت گیتهاب پر شد ({n} دقیقه تا ریست). از مسیر DNS ادامه می‌دهیم.',
         media_rate_limited_short: 'محدودیت تعداد درخواست گیتهاب',
+        media_rate_limited_fallback: 'محدودیت گیتهاب — رفتن به DNS',
+        media_relay_404_fallback: 'هنوز در رله سریع نیست — رفتن به DNS',
         close_confirm: 'بستن thefeed؟',
         close_cancel: 'نبند',
         close_background: 'بستن، اما در پس‌زمینه فعال بمونه',
@@ -2638,8 +3063,7 @@
         scanner_status: 'وضعیت',
         scanner_found: 'پیدا شده',
         scanner_latency: 'زمان پاسخ',
-        scanner_append: 'افزودن به تنظیمات',
-        scanner_overwrite: 'جایگزینی تنظیمات',
+        scanner_append: 'افزودن به بانک و لیست فعال',
         scanner_start: 'شروع اسکن',
         scanner_stop: 'توقف',
         scanner_pause: 'مکث',
@@ -2763,6 +3187,40 @@
         scatter: 'Parallel resolvers per block',
         update_available: 'New version available: {v}',
         latest_version: 'Latest Version',
+        save_current_list: 'New list',
+        info: 'Info',
+        resolver_list_name_ph: 'List name',
+        empty_list_scan_confirm: 'List "{n}" is empty. Scan the bank to find working resolvers?',
+        empty_list_no_bank: 'This list and the bank are both empty. Open the Bank tab to add resolvers manually, or run the resolver scanner.',
+        scan: 'Scan',
+        dont_show_again: "Don't show again",
+        show_scan_prompt: 'Show scan prompt on startup',
+        startup_scan_msg: 'Run a scan now to find working resolvers?',
+        startup_scan_off: 'Startup scan prompt disabled',
+        add_to_list: 'Add to list',
+        no_lists: 'No saved lists',
+        added_to_list: 'Added to "{n}"',
+        already_in_list: 'Already in "{n}"',
+        add_failed: 'Add failed',
+        share_source: 'Source',
+        profile_name: 'Profile name',
+        share_uri: 'Share URI',
+        show_qr: 'Show QR',
+        hide_qr: 'Hide QR',
+        share_qr_hint: 'Scan with another device to import',
+        paste: 'Paste',
+        clipboard_blocked: 'Clipboard access blocked',
+        resolver_list_switch_failed: 'Could not switch list',
+        resolver_list_rename_prompt: 'New name for "{n}"',
+        resolver_list_delete_confirm: 'Delete "{n}"?',
+        resolver_list_overwrite_confirm: 'A list named "{n}" already exists. Overwrite?',
+        resolver_list_name_prompt: 'Name this list:',
+        resolver_list_saved: 'Saved "{n}"',
+        manage_lists: 'Manage',
+        rename: 'Rename', delete: 'Delete', overwrite: 'Overwrite',
+        rename_failed: 'Rename failed',
+        delete_failed: 'Delete failed',
+        save_failed: 'Save failed',
         check_latest_version: 'Check for Updates',
         check_now: 'Check Now',
         check_github: 'Check on GitHub',
@@ -2791,6 +3249,8 @@
         media_slow_only: 'GitHub relay is unavailable for this file. The DNS path is very slow. Download anyway?',
         media_rate_limited: 'GitHub rate limit hit ({n} min until reset). Falling back to slow DNS path.',
         media_rate_limited_short: 'GitHub rate limit',
+        media_rate_limited_fallback: 'Rate limit hit — switching to DNS',
+        media_relay_404_fallback: 'Not in fast relay yet — switching to DNS',
         close_confirm: 'Close thefeed?',
         close_cancel: "Don't close",
         close_background: 'Close UI but keep running in background',
@@ -2816,8 +3276,7 @@
         scanner_status: 'Status',
         scanner_found: 'found',
         scanner_latency: 'Latency',
-        scanner_append: 'Append to Config',
-        scanner_overwrite: 'Overwrite Config',
+        scanner_append: 'Add to bank & active list',
         scanner_start: 'Start Scan',
         scanner_stop: 'Stop',
         scanner_pause: 'Pause',
@@ -3155,6 +3614,56 @@
       });
     }
 
+    // showInputDialog is a themed window.prompt replacement. Returns
+    // the trimmed input string on confirm, or null on cancel/escape.
+    // Uses the existing modal-overlay pattern so it inherits the
+    // app's theme — no more browser-native prompt with default
+    // chrome that ignores dark mode.
+    function showInputDialog(opts) {
+      opts = opts || {};
+      return new Promise(function (resolve) {
+        var overlay = document.createElement('div');
+        overlay.className = 'modal-overlay active';
+        var titleHtml = opts.title ? '<h2 style="margin-top:0;margin-bottom:8px;font-size:16px">' + esc(opts.title) + '</h2>' : '';
+        var msgHtml = opts.message ? '<p style="font-size:13px;color:var(--text-dim);margin:0 0 12px;line-height:1.6">' + esc(opts.message) + '</p>' : '';
+        overlay.innerHTML =
+          '<div class="modal" style="max-width:380px">'
+          + titleHtml + msgHtml
+          + '<input type="text" id="inputDialogField" maxlength="' + (opts.maxLength || 64) + '"'
+          + ' value="' + esc(opts.value || '') + '"'
+          + ' placeholder="' + esc(opts.placeholder || '') + '"'
+          + ' autocomplete="off" spellcheck="false"'
+          + ' style="width:100%;padding:9px 12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;font-size:13px;box-sizing:border-box;font-family:inherit">'
+          + '<div class="modal-actions">'
+          + '<button class="btn btn-flat" id="inputDialogCancel">' + esc(opts.cancelText || t('cancel') || 'Cancel') + '</button>'
+          + '<button class="btn btn-primary" id="inputDialogOk">' + esc(opts.okText || t('ok') || 'OK') + '</button>'
+          + '</div></div>';
+        document.body.appendChild(overlay);
+        var field = document.getElementById('inputDialogField');
+        var done = function (val) {
+          document.removeEventListener('keydown', onKey);
+          if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+          resolve(val);
+        };
+        document.getElementById('inputDialogCancel').onclick = function () { done(null); };
+        document.getElementById('inputDialogOk').onclick = function () {
+          var v = (field.value || '').trim();
+          done(v || null);
+        };
+        var onKey = function (e) {
+          if (e.key === 'Escape') { done(null); }
+          else if (e.key === 'Enter') {
+            var v = (field.value || '').trim();
+            done(v || null);
+          }
+        };
+        document.addEventListener('keydown', onKey);
+        // Focus & select after the modal is in the DOM so iOS WebView
+        // also gets the soft keyboard up.
+        setTimeout(function () { try { field.focus(); field.select(); } catch (e) { } }, 30);
+      });
+    }
+
     // showInfoDialog is the one-button cousin of showConfirmDialog: a small
     // modal with a message and a single OK button. Used for explanatory
     // bits like "this file is too large for the server cache".
@@ -3174,6 +3683,26 @@
       applyThemeButtons();
       document.getElementById('settingsModal').classList.add('active');
       try { initAndroidSettings(); } catch (e) { console.error('initAndroidSettings error:', e); }
+      // Reflect current localStorage flag on every open — toggling it
+      // away in the prompt itself should be picked up next time
+      // settings is opened.
+      var promptEl = document.getElementById('cfgShowScanPrompt');
+      if (promptEl) promptEl.checked = localStorage.getItem('thefeed_scan_prompt_off') !== '1';
+    }
+
+    // Toggle the localStorage flag that controls whether the startup
+    // scan prompt is shown. Cleared when the box is checked, set to
+    // "1" when unchecked.
+    function setShowScanPrompt(enabled) {
+      if (enabled) {
+        localStorage.removeItem('thefeed_scan_prompt_off');
+        // Also clear the per-session "already shown" flag so the
+        // prompt appears next time the user reloads — without this
+        // re-enabling does nothing until they restart the browser.
+        sessionStorage.removeItem('thefeed_scan_prompt_shown');
+      } else {
+        localStorage.setItem('thefeed_scan_prompt_off', '1');
+      }
     }
     function closeSettings() { document.getElementById('settingsModal').classList.remove('active') }
     async function saveSettings() {
@@ -3373,6 +3902,399 @@
         }
       }
     }
+    function toggleResolverBankInfo() {
+      var panel = document.getElementById('resolverBankInfoPanel');
+      var btn = document.getElementById('resolverBankInfoBtn');
+      if (!panel || !btn) return;
+      var open = panel.hasAttribute('hidden');
+      if (open) panel.removeAttribute('hidden');
+      else panel.setAttribute('hidden', '');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    // ===== NAMED RESOLVER LISTS =====
+    // The user keeps multiple named resolver lists (e.g. "Home",
+    // "Office", "Mobile") and switches between them with one tap. UI
+    // is a single tab strip at the top of the Resolver Bank modal:
+    // each list is a tab, "+" creates a new list, "Bank" is the master
+    // pool. The selected list-tab shows ⋮ that opens an inline
+    // rename/delete menu — no extra modals.
+
+    var rlState = { lists: [], selected: '' };
+
+    async function loadResolverLists() {
+      try {
+        var r = await fetch('/api/resolvers/lists');
+        if (!r.ok) { renderResolverTabs(); return; }
+        rlState = await r.json();
+        renderResolverTabs();
+      } catch (e) { renderResolverTabs(); }
+    }
+
+    function renderResolverTabs() {
+      var tabs = document.getElementById('resolverTabs');
+      if (!tabs) return;
+      hideResolverTabMenu();
+      tabs.innerHTML = '';
+      var lists = (rlState && rlState.lists) || [];
+      lists.forEach(function (li) {
+        var tab = document.createElement('button');
+        tab.type = 'button';
+        tab.className = 'rtab' + (li.selected && currentResolverTab === 'active' ? ' rtab-active' : '');
+        tab.setAttribute('role', 'tab');
+        tab.title = li.name;
+        var label = document.createElement('span');
+        label.textContent = li.name;
+        var count = document.createElement('span');
+        count.className = 'rtab-count';
+        count.textContent = li.count || 0;
+        tab.appendChild(label);
+        tab.appendChild(count);
+        if (li.selected && currentResolverTab === 'active') {
+          var more = document.createElement('span');
+          more.className = 'rtab-menu-btn';
+          more.setAttribute('aria-label', t('manage_lists') || 'Manage');
+          more.innerHTML = '&#8942;'; // vertical ellipsis
+          more.onclick = function (e) {
+            e.stopPropagation();
+            toggleResolverTabMenu(this);
+          };
+          tab.appendChild(more);
+        }
+        tab.onclick = function () {
+          hideResolverTabMenu();
+          if (li.selected && currentResolverTab === 'active') return;
+          if (!li.selected) {
+            selectResolverList(li.name);
+          } else {
+            // Already selected but on the Bank view — hop back.
+            switchResolverTab('active');
+          }
+        };
+        tabs.appendChild(tab);
+      });
+      // "+" — create new list. Always present so an empty install
+      // still has an obvious onboarding affordance.
+      var add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'rtab rtab-add';
+      add.title = t('save_current_list') || 'Save current as new list';
+      add.setAttribute('aria-label', t('save_current_list') || 'New list');
+      add.innerHTML = '&#43;';
+      add.onclick = function () {
+        hideResolverTabMenu();
+        saveCurrentResolverListPrompt();
+      };
+      tabs.appendChild(add);
+      renderBankPill();
+    }
+
+    function renderBankPill() {
+      // The Bank chip sits on the modal header row (right edge in
+      // LTR / left in RTL) — different shape and location from the
+      // list-tabs because it points at the master pool, not a list.
+      var slot = document.getElementById('resolverBankSlot');
+      if (!slot) return;
+      slot.innerHTML = '';
+      var bank = document.createElement('button');
+      bank.type = 'button';
+      bank.id = 'resolverBankTab';
+      bank.className = 'rtab-bank' + (currentResolverTab === 'bank' ? ' rtab-active' : '');
+      bank.setAttribute('role', 'tab');
+      var icon = document.createElement('span');
+      icon.className = 'rtab-bank-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.innerHTML = '&#128176;'; // 💰 a bank pouch
+      var bankLabel = document.createElement('span');
+      bankLabel.textContent = t('resolver_tab_bank') || 'Bank';
+      var bankCount = document.createElement('span');
+      bankCount.className = 'rtab-count';
+      bankCount.id = 'resolverBankCount';
+      bank.appendChild(icon);
+      bank.appendChild(bankLabel);
+      bank.appendChild(bankCount);
+      bank.onclick = function () {
+        hideResolverTabMenu();
+        switchResolverTab('bank');
+      };
+      slot.appendChild(bank);
+    }
+
+    async function selectResolverList(name) {
+      if (!name) return;
+      // If the picked list is empty, ask the user before kicking off
+      // an automatic bank-scan. Two flavors:
+      //  - bank has resolvers → confirm "Scan now?"
+      //  - bank also empty → info dialog pointing at "add manually" /
+      //    "scanner" with no scan triggered
+      var lists = (rlState && rlState.lists) || [];
+      var picked = lists.find(function (l) { return l.name === name; });
+      var noScan = false;
+      if (picked && (picked.count || 0) === 0) {
+        var bankEl = document.getElementById('resolverBankCount');
+        var bankCount = bankEl ? (parseInt(bankEl.textContent, 10) || 0) : 0;
+        if (bankCount > 0) {
+          var ok = await showConfirmDialog(
+            (t('empty_list_scan_confirm') || 'List "{n}" is empty. Scan the bank to find working resolvers?').replace('{n}', name),
+            t('scan') || 'Scan',
+            t('cancel') || 'Cancel');
+          if (!ok) noScan = true;
+        } else {
+          // Bank also empty — show guidance and switch without scan.
+          await showInfoDialog(
+            t('empty_list_no_bank') || 'This list and the bank are both empty. Open the Bank tab to add resolvers manually, or run the resolver scanner.',
+            t('ok') || 'OK');
+          noScan = true;
+        }
+      }
+      try {
+        var r = await fetch('/api/resolvers/lists/select', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name, noScan: noScan })
+        });
+        if (!r.ok) {
+          showToast(await r.text() || t('resolver_list_switch_failed') || 'Could not switch list');
+          loadResolverLists();
+          return;
+        }
+        rlState = await r.json();
+        switchResolverTab('active'); // also re-renders tabs
+        try { if (typeof _fetchActiveBoard === 'function') _fetchActiveBoard(); } catch (e) { }
+        try { if (typeof refreshResolversBadge === 'function') refreshResolversBadge(); } catch (e) { }
+        try { await doRefresh(false); } catch (e) { }
+      } catch (e) {
+        showToast(e.message || 'switch failed');
+      }
+    }
+
+    // ----- Inline tab menu (rename / delete on the selected list) -----
+
+    function toggleResolverTabMenu(anchor) {
+      var menu = document.getElementById('resolverTabMenu');
+      if (!menu) return;
+      if (!menu.hidden) { hideResolverTabMenu(); return; }
+      // Use viewport coordinates from getBoundingClientRect — pairs
+      // with position: fixed in CSS. Anchor the menu's top edge just
+      // below the ⋮ button, and align horizontally so the menu hangs
+      // from the same side as the button (RTL puts it on the right).
+      var rect = anchor.getBoundingClientRect();
+      menu.style.top = (rect.bottom + 4) + 'px';
+      menu.style.bottom = 'auto';
+      var isRtl = document.documentElement.dir === 'rtl';
+      // First make it visible at a temporary position so we can
+      // measure its width and clamp inside the viewport edges.
+      menu.hidden = false;
+      var menuW = menu.offsetWidth || 140;
+      if (isRtl) {
+        var rightOffset = window.innerWidth - rect.right;
+        // Clamp so the menu doesn't go off-screen on either side.
+        rightOffset = Math.max(8, Math.min(rightOffset, window.innerWidth - menuW - 8));
+        menu.style.right = rightOffset + 'px';
+        menu.style.left = 'auto';
+      } else {
+        var leftOffset = rect.left;
+        leftOffset = Math.max(8, Math.min(leftOffset, window.innerWidth - menuW - 8));
+        menu.style.left = leftOffset + 'px';
+        menu.style.right = 'auto';
+      }
+      // Close on next outside click. Defer one tick so the click that
+      // opened the menu doesn't immediately close it again.
+      setTimeout(function () {
+        document.addEventListener('click', _resolverTabMenuOutside, { once: true });
+      }, 0);
+    }
+
+    function hideResolverTabMenu() {
+      var menu = document.getElementById('resolverTabMenu');
+      if (menu) menu.hidden = true;
+      document.removeEventListener('click', _resolverTabMenuOutside);
+    }
+
+    function _resolverTabMenuOutside(e) {
+      var menu = document.getElementById('resolverTabMenu');
+      if (!menu || menu.hidden) return;
+      if (menu.contains(e.target)) return;
+      hideResolverTabMenu();
+    }
+
+    // ----- Bank → list picker -----
+    // The "+" button on each Bank row opens this popover so the user
+    // can pick a target named list. Click a list → POST add → toast.
+    var bankAddPickerAddr = '';
+
+    function openBankAddPicker(anchor, addr) {
+      bankAddPickerAddr = addr;
+      var menu = document.getElementById('bankAddMenu');
+      if (!menu) return;
+      var lists = (rlState && rlState.lists) || [];
+      menu.innerHTML = '';
+      if (!lists.length) {
+        var empty = document.createElement('div');
+        empty.style.padding = '8px 12px';
+        empty.style.color = 'var(--text-dim)';
+        empty.style.fontSize = '12px';
+        empty.textContent = t('no_lists') || 'No saved lists';
+        menu.appendChild(empty);
+      } else {
+        lists.forEach(function (li) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.onclick = function () { addBankAddrToList(li.name); };
+          var name = document.createElement('span');
+          name.textContent = li.name;
+          var count = document.createElement('span');
+          count.style.color = 'var(--text-dim)';
+          count.style.fontSize = '11px';
+          count.style.marginInlineStart = '6px';
+          count.textContent = '(' + (li.count || 0) + ')';
+          b.appendChild(name);
+          b.appendChild(count);
+          menu.appendChild(b);
+        });
+      }
+      // Position with viewport coords (matches resolver-tab-menu).
+      var rect = anchor.getBoundingClientRect();
+      menu.style.top = (rect.bottom + 4) + 'px';
+      menu.style.bottom = 'auto';
+      menu.hidden = false;
+      var menuW = menu.offsetWidth || 160;
+      var isRtl = document.documentElement.dir === 'rtl';
+      if (isRtl) {
+        var rightOffset = window.innerWidth - rect.right;
+        rightOffset = Math.max(8, Math.min(rightOffset, window.innerWidth - menuW - 8));
+        menu.style.right = rightOffset + 'px';
+        menu.style.left = 'auto';
+      } else {
+        var leftOffset = rect.left;
+        leftOffset = Math.max(8, Math.min(leftOffset, window.innerWidth - menuW - 8));
+        menu.style.left = leftOffset + 'px';
+        menu.style.right = 'auto';
+      }
+      // One-shot outside click closes. Defer one tick so the click
+      // that opened this menu doesn't immediately close it.
+      setTimeout(function () {
+        document.addEventListener('click', _bankAddMenuOutside, { once: true });
+      }, 0);
+    }
+
+    function hideBankAddMenu() {
+      var menu = document.getElementById('bankAddMenu');
+      if (menu) menu.hidden = true;
+      document.removeEventListener('click', _bankAddMenuOutside);
+    }
+
+    function _bankAddMenuOutside(e) {
+      var menu = document.getElementById('bankAddMenu');
+      if (!menu || menu.hidden) return;
+      if (menu.contains(e.target)) return;
+      hideBankAddMenu();
+    }
+
+    async function addBankAddrToList(listName) {
+      var addr = bankAddPickerAddr;
+      hideBankAddMenu();
+      if (!addr || !listName) return;
+      try {
+        var r = await fetch('/api/resolvers/lists/add', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: listName, resolvers: [addr] })
+        });
+        if (!r.ok) {
+          showToast(await r.text() || t('add_failed') || 'Add failed');
+          return;
+        }
+        var data = await r.json();
+        if (data.added > 0) {
+          showToast((t('added_to_list') || 'Added to "{n}"').replace('{n}', listName));
+        } else {
+          showToast((t('already_in_list') || 'Already in "{n}"').replace('{n}', listName));
+        }
+      } catch (e) { showToast(e.message || 'add failed'); }
+    }
+
+    async function renameCurrentResolverList() {
+      hideResolverTabMenu();
+      var current = (rlState.lists || []).find(function (li) { return li.selected; });
+      if (!current) return;
+      var newName = await showInputDialog({
+        title: t('rename') || 'Rename',
+        message: (t('resolver_list_rename_prompt') || 'New name for "{n}"').replace('{n}', current.name),
+        value: current.name,
+        maxLength: 32,
+      });
+      if (!newName || newName === current.name) return;
+      try {
+        var r = await fetch('/api/resolvers/lists/rename', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: current.name, newName: newName })
+        });
+        if (!r.ok) {
+          showToast(await r.text() || t('rename_failed') || 'Rename failed');
+          return;
+        }
+        rlState = await r.json();
+        renderResolverTabs();
+      } catch (e) { showToast(e.message || 'rename failed'); }
+    }
+
+    async function deleteCurrentResolverList() {
+      hideResolverTabMenu();
+      var current = (rlState.lists || []).find(function (li) { return li.selected; });
+      if (!current) return;
+      var ok = await showConfirmDialog(
+        (t('resolver_list_delete_confirm') || 'Delete "{n}"?').replace('{n}', current.name),
+        t('delete') || 'Delete',
+        t('cancel') || 'Cancel');
+      if (!ok) return;
+      try {
+        var r = await fetch('/api/resolvers/lists', {
+          method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: current.name })
+        });
+        if (!r.ok) {
+          showToast(await r.text() || t('delete_failed') || 'Delete failed');
+          return;
+        }
+        rlState = await r.json();
+        renderResolverTabs();
+        try { if (typeof _fetchActiveBoard === 'function') _fetchActiveBoard(); } catch (e) { }
+      } catch (e) { showToast(e.message || 'delete failed'); }
+    }
+
+    async function saveCurrentResolverListPrompt() {
+      var name = await showInputDialog({
+        title: t('save_current_list') || 'New list',
+        message: t('resolver_list_name_prompt') || 'Name this list:',
+        placeholder: t('resolver_list_name_ph') || 'List name',
+        maxLength: 32,
+      });
+      if (!name) return;
+      try {
+        var r = await fetch('/api/resolvers/lists/save', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name, mode: 'create' })
+        });
+        if (r.status === 409) {
+          var ok = await showConfirmDialog(
+            (t('resolver_list_overwrite_confirm') || 'A list named "{n}" already exists. Overwrite?').replace('{n}', name),
+            t('overwrite') || 'Overwrite',
+            t('cancel') || 'Cancel');
+          if (!ok) return;
+          r = await fetch('/api/resolvers/lists/save', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, mode: 'overwrite' })
+          });
+        }
+        if (!r.ok) {
+          showToast(await r.text() || t('save_failed') || 'Save failed');
+          return;
+        }
+        rlState = await r.json();
+        renderResolverTabs();
+        showToast((t('resolver_list_saved') || 'Saved "{n}"').replace('{n}', name));
+      } catch (e) { showToast(e.message || 'save failed'); }
+    }
+
     async function clearCache() {
       try { await mediaWipeIDB(); } catch (e) { }
       Object.keys(mediaBlobURLs).forEach(function (k) {
@@ -3412,21 +4334,43 @@
 
     // ===== SAVED RESOLVERS PROMPT =====
     function checkAndShowSavedResolversPrompt(status) {
+      // Suppressed by the user via "Don't show again" → settings can
+      // re-enable it.
+      if (localStorage.getItem('thefeed_scan_prompt_off') === '1') return;
+      // Per-tab debounce so we don't re-pop on every soft reload
+      // within the same browsing session.
       if (sessionStorage.getItem('thefeed_scan_prompt_shown')) return;
-      if (!status.lastScan || !status.lastScan.count) return;
-      var ls = status.lastScan;
-      var ageSec = Math.floor(Date.now() / 1000) - ls.scannedAt;
-      var ageStr;
-      if (ageSec < 3600) ageStr = Math.max(1, Math.round(ageSec / 60)) + ' ' + t('minutes_ago');
-      else ageStr = Math.round(ageSec / 3600) + ' ' + t('hours_ago');
-      var msg = t('saved_resolvers_msg').replace('{n}', ls.count).replace('{t}', ageStr);
+      var hasSaved = !!(status.lastScan && status.lastScan.count);
+      var msg;
+      if (hasSaved) {
+        var ls = status.lastScan;
+        var ageSec = Math.floor(Date.now() / 1000) - ls.scannedAt;
+        var ageStr;
+        if (ageSec < 3600) ageStr = Math.max(1, Math.round(ageSec / 60)) + ' ' + t('minutes_ago');
+        else ageStr = Math.round(ageSec / 3600) + ' ' + t('hours_ago');
+        msg = t('saved_resolvers_msg').replace('{n}', ls.count).replace('{t}', ageStr);
+      } else {
+        // Fresh install / wiped state — there's nothing to "use", so
+        // the prompt becomes a plain "want to scan?" question.
+        msg = t('startup_scan_msg') || 'Run a scan to find working resolvers?';
+      }
       document.getElementById('savedResolversMsg').textContent = msg;
+      // Hide "Use Now" when we have nothing saved to apply.
+      var useBtn = document.getElementById('savedResolversUseBtn');
+      if (useBtn) useBtn.style.display = hasSaved ? '' : 'none';
       document.getElementById('savedResolversModal').classList.add('active');
     }
     function savedResolversSkip() {
       // "Later" — just close, server already applied saved resolvers and refresh is underway
       document.getElementById('savedResolversModal').classList.remove('active');
       sessionStorage.setItem('thefeed_scan_prompt_shown', '1');
+    }
+    function savedResolversNever() {
+      // "Don't show again" — persist across sessions. The user can
+      // un-tick it from Settings → Show startup scan prompt.
+      localStorage.setItem('thefeed_scan_prompt_off', '1');
+      savedResolversSkip();
+      showToast(t('startup_scan_off') || 'Startup scan prompt disabled');
     }
     function savedResolversUseNow() {
       // Server already applied saved resolvers at startup; just close the popup
@@ -3450,6 +4394,17 @@
       eventSource.addEventListener('update', async function (e) {
         refreshResolversBadge();
         var data; try { data = JSON.parse(e.data) } catch (x) { data = e.data }
+        // Server signals that the saved resolver lists changed (auto-
+        // populated from a bank scan, or user-triggered rescan
+        // overwrote them). Refresh the tab strip so the count
+        // badge stops showing 0 while resolvers are actually live.
+        if (data === 'resolver-lists') {
+          if (document.getElementById('resolversModal').classList.contains('active')) {
+            try { loadResolverLists(); } catch (e2) { }
+            try { if (typeof _fetchActiveBoard === 'function') _fetchActiveBoard(); } catch (e2) { }
+          }
+          return;
+        }
         var wasEmpty = channels.length === 0;
         var snapChannel = selectedChannel;
         await loadChannels();
@@ -3518,7 +4473,18 @@
       var p = profiles.profiles.find(function (x) { return x.id === id });
       if (!p || !p.config.domain) return '';
       var resolvers = selectedResolvers || [];
-      return 'thefeed://' + encodeURIComponent(p.config.domain) + '/' + encodeURIComponent(p.config.key) + '?r=' + encodeURIComponent(resolvers.join(','));
+      // Include the user-set nickname so the recipient lands on a
+      // pre-named profile instead of "thefeed.example.com" pulled
+      // from the domain. Capped at 32 chars on this side; the
+      // import side enforces the same cap defensively.
+      var uri = 'thefeed://' + encodeURIComponent(p.config.domain)
+        + '/' + encodeURIComponent(p.config.key)
+        + '?r=' + encodeURIComponent(resolvers.join(','));
+      var nick = (p.nickname || '').trim().slice(0, 32);
+      if (nick && nick !== p.config.domain) {
+        uri += '&n=' + encodeURIComponent(nick);
+      }
+      return uri;
     }
 
     function renderProfilesModal() {
@@ -3531,7 +4497,6 @@
         var p = profiles.profiles[i];
         var isActive = p.id === activeProfileId;
         var initial = (p.nickname || p.config.domain || '?').charAt(0).toUpperCase();
-        var shareId = 'share-' + p.id;
         h += '<div class="profile-row' + (isActive ? ' active-profile' : '') + '" id="prow-' + p.id + '">';
         h += '<div class="profile-row-main" onclick="activateProfile(\'' + p.id + '\')">';
         h += '<div class="profile-row-avatar">' + esc(initial) + '</div>';
@@ -3539,79 +4504,146 @@
         if (isActive) h += '<span class="active-badge">' + t('active') + '</span>';
         h += '</div><div class="profile-row-domain">' + esc(p.config.domain) + '</div></div>';
         h += '<div class="profile-row-btns">';
-        h += '<button class="btn btn-flat btn-sm" onclick="event.stopPropagation();toggleSharePanel(\'' + p.id + '\')" title="' + t('share') + '" style="font-size:11px">' + t('share') + '</button>';
+        h += '<button class="btn btn-flat btn-sm" onclick="event.stopPropagation();openShareModal(\'' + p.id + '\')" title="' + t('share') + '" style="font-size:11px">' + t('share') + '</button>';
         h += '<button class="btn btn-flat btn-sm" onclick="event.stopPropagation();openProfileEditor(\'' + p.id + '\')" title="' + t('edit') + '" style="font-size:11px">' + t('edit') + '</button>';
         h += '</div></div>';
-        // Share panel (hidden by default)
-        h += '<div class="share-panel" id="' + shareId + '" style="display:none">';
-        h += '<div class="share-panel-inner">';
-        h += '<div id="share-resolvers-' + p.id + '" style="max-height:120px;overflow-y:auto;margin-bottom:6px;font-size:11px"></div>';
-        h += '<input class="share-uri-input" type="text" readonly id="suri-' + p.id + '" value="">';
-        h += '<div style="display:flex;gap:4px">';
-        h += '<button class="btn btn-primary btn-sm" onclick="copyShareUri(\'' + p.id + '\')">' + t('copy') + '</button>';
-        h += '<button class="btn btn-flat btn-sm" onclick="toggleSharePanel(\'' + p.id + '\')">&#10005;</button>';
-        h += '</div></div></div>';
         h += '</div>';
       }
       el.innerHTML = h;
     }
 
-    async function toggleSharePanel(id) {
-      var panel = document.getElementById('share-' + id);
-      if (!panel) return;
-      // If already visible, just close it
-      if (panel.style.display === 'block') {
-        panel.style.display = 'none';
+    // ===== SHARE PROFILE MODAL =====
+    var shareModalProfileId = '';
+
+    async function openShareModal(id) {
+      shareModalProfileId = id;
+      var p = (profiles && profiles.profiles || []).find(function (x) { return x.id === id });
+      if (!p) return;
+      document.getElementById('shareModalProfileName').textContent = p.nickname || p.config.domain;
+      document.getElementById('shareModalQrWrap').style.display = 'none';
+      var qrBtn = document.getElementById('shareModalQrBtn');
+      if (qrBtn) qrBtn.textContent = t('show_qr') || 'Show QR';
+      // Make sure rlState is loaded — the user may not have opened
+      // the Bank modal yet, in which case rlState is its empty
+      // default and the source dropdown would only have "Bank".
+      if (!rlState || !rlState.lists || !rlState.lists.length) {
+        try { await loadResolverLists(); } catch (e) { }
+      }
+      var src = document.getElementById('shareModalSource');
+      src.innerHTML = '';
+      var bankOpt = document.createElement('option');
+      bankOpt.value = '__bank';
+      bankOpt.textContent = (t('resolver_tab_bank') || 'Bank');
+      src.appendChild(bankOpt);
+      ((rlState && rlState.lists) || []).forEach(function (li) {
+        var opt = document.createElement('option');
+        opt.value = li.name;
+        opt.textContent = li.name + ' (' + (li.count || 0) + ')';
+        src.appendChild(opt);
+      });
+      document.getElementById('shareProfileModal').classList.add('active');
+      await reloadShareModalResolvers();
+    }
+
+    function closeShareModal() {
+      document.getElementById('shareProfileModal').classList.remove('active');
+      shareModalProfileId = '';
+    }
+
+    async function reloadShareModalResolvers() {
+      var src = document.getElementById('shareModalSource');
+      var source = src ? src.value : '__bank';
+      var el = document.getElementById('shareModalResolvers');
+      if (!el) return;
+      el.innerHTML = '<span style="color:var(--text-dim)">' + (t('loading') || '…') + '</span>';
+      var addrs = [];
+      try {
+        if (source === '__bank') {
+          var r = await fetch('/api/resolvers/bank');
+          var data = r.ok ? await r.json() : { bank: [] };
+          (data.bank || []).forEach(function (b) { addrs.push(b.addr); });
+        } else {
+          var lr = await fetch('/api/resolvers/lists?include=resolvers');
+          if (lr.ok) {
+            var ld = await lr.json();
+            var li = (ld.lists || []).find(function (x) { return x.name === source; });
+            if (li && li.resolvers) addrs = li.resolvers.slice();
+          }
+        }
+      } catch (e) { }
+      if (!addrs.length) {
+        el.innerHTML = '<span style="color:var(--text-dim)">' + (t('no_active_resolvers') || '—') + '</span>';
+        updateShareModalUri();
         return;
       }
-      // Close all first
-      document.querySelectorAll('.share-panel').forEach(function (sp) { sp.style.display = 'none' });
-      panel.style.display = 'block';
-      // Populate resolver checkboxes from bank
-      var resolverEl = document.getElementById('share-resolvers-' + id);
-      resolverEl.innerHTML = '<span style="color:var(--text-dim)">' + t('loading') + '</span>';
-      try {
-        var r = await fetch('/api/resolvers/bank');
-        var data = r.ok ? await r.json() : { bank: [] };
-        var bank = data.bank || [];
-        if (bank.length === 0) {
-          resolverEl.innerHTML = '<span style="color:var(--text-dim)">' + t('no_active_resolvers') + '</span>';
-        } else {
-          var h = '<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--text-dim)">' + t('select_resolvers_export') + '</label></div>';
-          h += '<div style="display:flex;gap:4px;margin-bottom:4px"><button class="btn btn-flat" style="font-size:10px;padding:2px 6px" onclick="toggleAllShareResolvers(\'' + id + '\',true)">' + t('select_all') + '</button><button class="btn btn-flat" style="font-size:10px;padding:2px 6px" onclick="toggleAllShareResolvers(\'' + id + '\',false)">' + t('select_none') + '</button></div>';
-          for (var i = 0; i < bank.length; i++) {
-            h += '<label style="display:block;font-size:11px;font-family:monospace;cursor:pointer"><input type="checkbox" class="share-r-cb" data-profile="' + id + '" value="' + escAttr(bank[i].addr) + '" checked onchange="updateShareUri(\'' + id + '\')" style="width:auto;margin-inline-end:4px">' + esc(bank[i].addr) + '</label>';
-          }
-          resolverEl.innerHTML = h;
-        }
-      } catch (e) { resolverEl.innerHTML = '' }
-      updateShareUri(id);
+      var h = '';
+      addrs.forEach(function (addr) {
+        h += '<label style="display:block;cursor:pointer;padding:2px 0">'
+          + '<input type="checkbox" class="share-modal-cb" value="' + escAttr(addr) + '" checked onchange="updateShareModalUri()" style="width:auto;margin-inline-end:6px;vertical-align:middle">'
+          + esc(addr) + '</label>';
+      });
+      el.innerHTML = h;
+      updateShareModalUri();
     }
 
-    function toggleAllShareResolvers(id, checked) {
-      document.querySelectorAll('.share-r-cb[data-profile="' + id + '"]').forEach(function (cb) { cb.checked = checked });
-      updateShareUri(id);
+    function toggleAllShareModalResolvers(checked) {
+      document.querySelectorAll('.share-modal-cb').forEach(function (cb) { cb.checked = checked });
+      updateShareModalUri();
     }
 
-    function updateShareUri(id) {
-      var cbs = document.querySelectorAll('.share-r-cb[data-profile="' + id + '"]');
+    function getShareModalUri() {
       var selected = [];
-      cbs.forEach(function (cb) { if (cb.checked) selected.push(cb.value) });
-      var uri = buildProfileUri(id, selected);
-      var input = document.getElementById('suri-' + id);
-      if (input) input.value = uri || t('no_config');
+      document.querySelectorAll('.share-modal-cb').forEach(function (cb) { if (cb.checked) selected.push(cb.value) });
+      return buildProfileUri(shareModalProfileId, selected);
     }
 
-    function copyShareUri(id) {
-      var cbs = document.querySelectorAll('.share-r-cb[data-profile="' + id + '"]');
-      var selected = [];
-      cbs.forEach(function (cb) { if (cb.checked) selected.push(cb.value) });
-      var uri = buildProfileUri(id, selected);
+    function updateShareModalUri() {
+      var uri = getShareModalUri();
+      var ta = document.getElementById('shareModalUri');
+      if (ta) ta.value = uri || (t('no_config') || '');
+      // If QR is currently visible, keep it in sync with the URI.
+      if (document.getElementById('shareModalQrWrap').style.display === 'block') {
+        renderShareModalQr(uri);
+      }
+    }
+
+    function copyShareModalUri() {
+      var uri = getShareModalUri();
       if (!uri) { showToast(t('no_config')); return }
       navigator.clipboard.writeText(uri).then(function () { showToast(t('copied')) }).catch(function () {
-        var input = document.getElementById('suri-' + id); if (input) { input.select(); input.setSelectionRange(0, 9999); }
+        var ta = document.getElementById('shareModalUri');
+        if (ta) { ta.select(); ta.setSelectionRange(0, 9999); }
         showToast(t('copied'));
       });
+    }
+
+    function toggleShareModalQr() {
+      var wrap = document.getElementById('shareModalQrWrap');
+      var btn = document.getElementById('shareModalQrBtn');
+      if (!wrap) return;
+      if (wrap.style.display === 'block') {
+        wrap.style.display = 'none';
+        if (btn) btn.textContent = t('show_qr') || 'Show QR';
+      } else {
+        wrap.style.display = 'block';
+        if (btn) btn.textContent = t('hide_qr') || 'Hide QR';
+        renderShareModalQr(getShareModalUri());
+      }
+    }
+
+    function renderShareModalQr(uri) {
+      var box = document.getElementById('shareModalQr');
+      if (!box) return;
+      if (!uri) { box.innerHTML = ''; return }
+      try {
+        if (typeof qrEncodeSvg === 'function') {
+          box.innerHTML = qrEncodeSvg(uri, 6);
+        } else {
+          box.innerHTML = '<span style="color:#000;font-size:12px;padding:8px">QR not available</span>';
+        }
+      } catch (e) {
+        box.innerHTML = '<span style="color:#a00;font-size:12px;padding:8px">' + esc(e.message || 'QR error') + '</span>';
+      }
     }
 
     async function activateProfile(id) {
@@ -3641,6 +4673,25 @@
     }
 
     // ===== IMPORT URI =====
+    async function pasteImportUri() {
+      var input = document.getElementById('importUriInput');
+      if (!input) return;
+      try {
+        var text = await navigator.clipboard.readText();
+        if (text) {
+          input.value = text.trim();
+          input.focus();
+        }
+      } catch (e) {
+        // Clipboard API can fail (no permission, http context, etc.) —
+        // fall back to focus + select-all so the user can Cmd-V into
+        // an empty field with one tap.
+        input.focus();
+        try { input.select(); } catch (e2) { }
+        showToast(t('clipboard_blocked') || 'Clipboard blocked — paste manually');
+      }
+    }
+
     async function doImportUri() {
       var errEl = document.getElementById('importError'); var okEl = document.getElementById('importSuccess');
       errEl.style.display = 'none'; okEl.style.display = 'none';
@@ -3653,26 +4704,43 @@
         var parts = path.split('/');
         var domain = decodeURIComponent(parts[0] || ''); var key = decodeURIComponent(parts[1] || '');
         var resolvers = [];
-        params.split('&').forEach(function (kv) { var p = kv.split('='); if (p[0] === 'r' && p[1]) resolvers = decodeURIComponent(p[1]).split(',').filter(Boolean) });
+        var sharedNick = '';
+        params.split('&').forEach(function (kv) {
+          var eq = kv.indexOf('=');
+          if (eq < 0) return;
+          var k = kv.substring(0, eq);
+          var v = kv.substring(eq + 1);
+          if (k === 'r' && v) resolvers = decodeURIComponent(v).split(',').filter(Boolean);
+          else if (k === 'n' && v) {
+            try { sharedNick = decodeURIComponent(v); } catch (e) { sharedNick = ''; }
+          }
+        });
         if (!domain || !key) { errEl.textContent = t('uri_missing'); errEl.style.display = 'block'; return }
-        if (!resolvers.length) resolvers = ['8.8.8.8', '1.1.1.1'];
-        // Add resolvers to the shared bank.
-        var bankData = { count: 0 };
-        try {
-          var bankRes = await fetch('/api/resolvers/bank', { signal: AbortSignal.timeout(5000) });
-          if (bankRes.ok) bankData = await bankRes.json();
-        } catch (e2) { /* timeout or fetch error — treat as empty bank */ }
-        var shouldAdd = true;
-        if (bankData.count > 0 && bankData.count <= 200) {
-          shouldAdd = await showConfirmDialog(t('import_add_resolvers').replace('{n}', resolvers.length), t('yes'), t('no'));
-        } else if (bankData.count > 200) {
-          shouldAdd = await showConfirmDialog(t('import_add_resolvers_large').replace('{n}', resolvers.length).replace('{c}', bankData.count), t('yes'), t('no'));
-        }
-        if (shouldAdd) {
-          await fetch('/api/resolvers/bank', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resolvers: resolvers }) });
+        // No 8.8.8.8 / 1.1.1.1 fallback — an empty resolver list in
+        // the URI is the sender's deliberate choice (e.g. they want
+        // the recipient to bring their own bank).
+        sharedNick = sharedNick.replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 32);
+        // Only ask about bank merging when the URI actually carried
+        // resolvers — empty list means the sender shared zero, so
+        // there's nothing to merge and no prompt to show.
+        if (resolvers.length > 0) {
+          var bankData = { count: 0 };
+          try {
+            var bankRes = await fetch('/api/resolvers/bank', { signal: AbortSignal.timeout(5000) });
+            if (bankRes.ok) bankData = await bankRes.json();
+          } catch (e2) { }
+          var shouldAdd = true;
+          if (bankData.count > 0 && bankData.count <= 200) {
+            shouldAdd = await showConfirmDialog(t('import_add_resolvers').replace('{n}', resolvers.length), t('yes'), t('no'));
+          } else if (bankData.count > 200) {
+            shouldAdd = await showConfirmDialog(t('import_add_resolvers_large').replace('{n}', resolvers.length).replace('{c}', bankData.count), t('yes'), t('no'));
+          }
+          if (shouldAdd) {
+            await fetch('/api/resolvers/bank', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resolvers: resolvers }) });
+          }
         }
         // Create profile without resolvers (they're in the bank now).
-        var profile = { id: '', nickname: domain, config: { domain: domain, key: key, queryMode: 'single', rateLimit: 6 } };
+        var profile = { id: '', nickname: sharedNick || domain, config: { domain: domain, key: key, queryMode: 'single', rateLimit: 6 } };
         var r = await fetch('/api/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create', profile: profile }) });
         if (!r.ok) throw new Error('save failed');
         okEl.textContent = t('import_success').replace('{d}', domain); okEl.style.display = 'block';
@@ -3765,7 +4833,10 @@
 
     async function saveProfile() {
       var errEl = document.getElementById('peError'); errEl.style.display = 'none';
-      var nick = document.getElementById('peNick').value.trim();
+      // Trim and clamp the nickname server-side too: the maxlength
+      // attribute on the input only stops keyboard typing, not paste
+      // / programmatic value setting.
+      var nick = document.getElementById('peNick').value.trim().slice(0, 32);
       var domain = document.getElementById('peDomain').value.trim();
       var key = document.getElementById('peKey').value;
       if (!domain || !key) { errEl.textContent = t('domain') + ' / ' + t('passphrase'); errEl.style.display = 'block'; return }
@@ -4643,12 +5714,11 @@
         var minutes = (resetMin && resetMin > 0) ? resetMin : '?';
         var msg = (t('media_rate_limited') || 'GitHub rate limit hit. Reset in {n} min — using slow path.').replace('{n}', minutes);
         showToast(msg);
-        if (dnsAvail) {
-          restartWith('slow');
-          return;
-        }
-        mediaShowError(card, t('media_rate_limited_short') || 'Rate limited');
-        finishSlot();
+        // Always try DNS as the fallback — even if the manifest
+        // didn't advertise it (the file might still be reachable
+        // via DNS even when the flag says no). If DNS truly can't
+        // serve it, the slow path will surface its own error.
+        restartWith('slow');
       }
       function finishSlot() {
         mediaActiveCount = Math.max(0, mediaActiveCount - 1);
@@ -4671,9 +5741,10 @@
       };
       async function handleFastFailure(reason, status) {
         attempt++;
-        // 404 = file not in repo (won't materialise on retry).
-        // 429 = rate limit (already handled separately).
-        // Skipping retries here protects the 60/h API budget.
+        // 404 = not in repo, 429 = rate-limited. Both are terminal
+        // for the fast path — retrying GitHub won't help, and we
+        // don't want to burn the 60/h API budget. Skip retries and
+        // fall straight through to the DNS path if available.
         var skipRetry = (status === 404 || status === 429);
         if (!skipRetry && attempt < GH_MAX_RETRIES) {
           await new Promise(function (r) { setTimeout(r, GH_RETRY_DELAY_MS); });
@@ -4689,7 +5760,19 @@
           xhr.send();
           return;
         }
-        // Out of retries — ask the user before going to the slow path.
+        // 404 / 429: auto-fallback to DNS without a prompt — the
+        // fast path is terminal here, asking "do you want slow?"
+        // adds friction. Try DNS regardless of dnsAvail flag, since
+        // the file might still come through that path.
+        if (skipRetry && source === 'fast') {
+          var note = (status === 404)
+            ? (t('media_relay_404_fallback') || 'Not in fast relay yet — switching to DNS')
+            : (t('media_rate_limited_fallback') || 'Rate limit hit — switching to DNS');
+          showToast(note);
+          restartWith('slow');
+          return;
+        }
+        // Other failures — ask the user before going to the slow path.
         if (source === 'fast' && dnsAvail) {
           var ok = await showConfirmDialog(
             t('media_relay_fallback') || "Fast relay failed. Try the slow DNS path? Note: this can be very slow.",
@@ -5283,6 +6366,57 @@
       if (txt) txt.textContent = sizeStr;
     }
 
+    // Parses leading [IMAGE]/[VIDEO]/[FILE]/etc tags out of `text`.
+    // Returns {mediaHtml, textHtml} — used by both top-level messages
+    // and the body of a [REPLY] (so a reply that carries an image
+    // still renders a downloadable media card instead of dropping it).
+    function parseTextMedia(text, idBase) {
+      var iranify = function (s) {
+        return linkify(s).replace(/🇮🇷/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}☀️" style="height:1.1em;vertical-align:middle">');
+      };
+      var mediaTypes = ['[IMAGE]', '[VIDEO]', '[FILE]', '[AUDIO]', '[STICKER]', '[GIF]', '[CONTACT]', '[LOCATION]'];
+      var rest = text;
+      var cards = [];
+      while (true) {
+        var matchedTag = null;
+        for (var m = 0; m < mediaTypes.length; m++) {
+          if (rest.indexOf(mediaTypes[m]) === 0) { matchedTag = mediaTypes[m]; break; }
+        }
+        if (!matchedTag) break;
+        var p = parseDownloadableMedia(rest, matchedTag);
+        // Bare "[TAG]<word>" with non-numeric/non-newline next char is
+        // caption text, not a media tag. Wire forms are "[TAG]\n..."
+        // or "[TAG]<digit>:<dl>:<ch>:<blk>:<crc>".
+        var afterTag = rest.charAt(matchedTag.length);
+        var isLegacyOrStructured = afterTag === '' || afterTag === '\n' || (afterTag >= '0' && afterTag <= '9');
+        if (!isLegacyOrStructured) break;
+        cards.push({ tag: matchedTag, parsed: p });
+        rest = p.caption;
+      }
+      var mediaHtml = '';
+      var textHtml = '';
+      if (cards.length === 0) {
+        textHtml = iranify(text);
+      } else if (cards.length === 1) {
+        var c0 = cards[0];
+        if (c0.parsed.downloadable || c0.parsed.size > 0) {
+          mediaHtml = renderDownloadableMedia(c0.tag, c0.parsed, idBase);
+          textHtml = c0.parsed.caption ? iranify(c0.parsed.caption) : '';
+        } else {
+          mediaHtml = '<div class="media-tag">' + c0.tag + '</div>';
+          textHtml = iranify(text.substring(c0.tag.length).replace(/^\n/, ''));
+        }
+      } else {
+        mediaHtml = '<div class="media-album">';
+        for (var k = 0; k < cards.length; k++) {
+          mediaHtml += renderDownloadableMedia(cards[k].tag, cards[k].parsed, idBase + '-' + k);
+        }
+        mediaHtml += '</div>';
+        textHtml = rest ? iranify(rest) : '';
+      }
+      return { mediaHtml: mediaHtml, textHtml: textHtml };
+    }
+
     function renderMessages(msgs, gaps) {
       var el = document.getElementById('messages');
       if (!msgs || !msgs.length) { el.innerHTML = '<div class="empty-state"><p>' + t('no_messages') + '</p><p style="font-size:12px;opacity:.6;margin-top:6px">' + t('no_messages_hint') + '</p></div>'; return }
@@ -5325,6 +6459,17 @@
         if (dateStr !== lastDate) { html += '<div class="msg-date-sep"><span dir="auto">' + dateStr + '</span></div>'; lastDate = dateStr }
         var timeStr = ts.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' });
         var text = msg.Text || msg.text || '';
+        // Outgoing private-chat messages get a "[ME]\n" sentinel
+        // from the server. Strip it, flag the bubble for right-align
+        // and a [YOU] label, then continue parsing the rest.
+        var isOutgoing = false;
+        if (text.indexOf('[ME]\n') === 0) {
+          isOutgoing = true;
+          text = text.substring('[ME]\n'.length);
+        } else if (text === '[ME]') {
+          isOutgoing = true;
+          text = '';
+        }
         currentMsgTexts.push(text);
         var mediaHtml = '', textHtml = linkify(text).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">');
         // Check for [REPLY]:ID or [REPLY] format (backward compat: also [REPLY:ID])
@@ -5332,24 +6477,41 @@
         if (replyMatch) {
           var replyTag = replyMatch[0];
           var replyId = replyMatch[1] ? parseInt(replyMatch[1]) : 0;
-          mediaHtml = '<div class="media-tag reply-tag">[REPLY]</div>';
           var replyBody = text.substring(replyTag.length).replace(/^\n/, '');
-          // If reply body contains a poll, render it as a styled poll card
-          if (replyBody.indexOf('[POLL]') === 0) {
-            var rpPollBody = replyBody.substring('[POLL]'.length).replace(/^\n/, '');
-            textHtml = renderPollCard(rpPollBody);
-            mediaHtml += '<div class="media-tag">[POLL]</div>';
-          } else {
-            textHtml = linkify(replyBody).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">');
+          // Outgoing-reply: server emits [REPLY]:N\n[ME]\nbody, so we
+          // peel [ME] off the inner body too. Without this, replies
+          // the user sent themselves would render as incoming.
+          if (replyBody.indexOf('[ME]\n') === 0) {
+            isOutgoing = true;
+            replyBody = replyBody.substring('[ME]\n'.length);
+          } else if (replyBody === '[ME]') {
+            isOutgoing = true;
+            replyBody = '';
           }
+          // Build the snippet of the message being replied to (skipped
+          // when the target isn't in this batch).
+          var previewHtml = '';
           if (replyId > 0 && msgByID[replyId]) {
-            // Strip the leading [TAG] plus any metadata suffix (legacy ":NN" or
-            // the new "<size>:<dl>:<ch>:<blk>:<crc>") and the trailing newline
-            // so the reply preview only shows the human caption.
             var rpText = (msgByID[replyId].Text || msgByID[replyId].text || '').replace(/^\[(?:IMAGE|VIDEO|FILE|AUDIO|STICKER|GIF|POLL|CONTACT|LOCATION|REPLY)[^\]]*\][^\n]*\n?/, '');
             if (rpText.length > 120) rpText = rpText.substring(0, 120) + '…';
-            mediaHtml += '<div class="reply-preview" onclick="scrollToMsg(' + replyId + ')" title="#' + replyId + '">' + esc(rpText) + '</div>';
+            previewHtml = '<div class="reply-preview" onclick="scrollToMsg(' + replyId + ')" title="#' + replyId + '">' + esc(rpText) + '</div>';
           }
+          // Parse the body — POLL gets the styled card, otherwise hand
+          // off to parseTextMedia so a reply that carries an image
+          // (or any other [TAG]) renders a downloadable card instead
+          // of dropping the media silently.
+          var bodyMediaHtml, bodyTextHtml;
+          if (replyBody.indexOf('[POLL]') === 0) {
+            var rpPollBody = replyBody.substring('[POLL]'.length).replace(/^\n/, '');
+            bodyMediaHtml = '<div class="media-tag">[POLL]</div>';
+            bodyTextHtml = renderPollCard(rpPollBody);
+          } else {
+            var rpParsed = parseTextMedia(replyBody, id);
+            bodyMediaHtml = rpParsed.mediaHtml;
+            bodyTextHtml = rpParsed.textHtml;
+          }
+          mediaHtml = '<div class="media-tag reply-tag">[REPLY]</div>' + previewHtml + bodyMediaHtml;
+          textHtml = bodyTextHtml;
         } else if (text.indexOf('[POLL]') === 0) {
           // Render poll with styled card
           mediaHtml = '<div class="media-tag">[POLL]</div>';
@@ -5401,8 +6563,12 @@
           }
         }
         var hasMediaCard = mediaHtml.indexOf('media-card') !== -1;
-        var msgClasses = 'msg' + (isPersian(text) ? ' rtl-msg' : '') + (hasMediaCard ? ' has-media' : '');
-        html += '<div class="' + msgClasses + '" dir="auto">' + mediaHtml + textHtml + '<div class="msg-meta"><button class="msg-copy-btn" onclick="copyMsg(' + i + ')">' + t('copy') + '</button><span>#' + id + '</span><span>' + timeStr + '</span></div></div>';
+        var msgClasses = 'msg'
+          + (isPersian(text) ? ' rtl-msg' : '')
+          + (hasMediaCard ? ' has-media' : '')
+          + (isOutgoing ? ' msg-outgoing' : '');
+        var youTag = isOutgoing ? '<div class="media-tag you-tag">[YOU]</div>' : '';
+        html += '<div class="' + msgClasses + '" dir="auto">' + youTag + mediaHtml + textHtml + '<div class="msg-meta"><button class="msg-copy-btn" onclick="copyMsg(' + i + ')">' + t('copy') + '</button><span>#' + id + '</span><span>' + timeStr + '</span></div></div>';
       }
       el.innerHTML = html;
       try { mediaTryRestoreVisibleCards(); } catch (e) { }
@@ -5997,10 +7163,8 @@
       var n = getSelectedScanIPs().length;
       var label = '(' + n + ')';
       var el1 = document.getElementById('scanAppendCount');
-      var el2 = document.getElementById('scanOverwriteCount');
       var el3 = document.getElementById('scanCopyCount');
       if (el1) el1.textContent = label;
-      if (el2) el2.textContent = label;
       if (el3) el3.textContent = label;
     }
 
@@ -6321,7 +7485,17 @@
         h += '<td style="padding:5px 8px;text-align:center;color:var(--error)">' + b.failure + '</td>';
         if (showRemove) {
           var fn = removeFromBank ? 'removeResolverFromBank' : 'removeResolver';
-          h += '<td style="padding:5px 8px;text-align:center"><button onclick="' + fn + '(\'' + esc(b.addr) + '\')" style="background:none;border:none;color:var(--error);cursor:pointer;font-size:14px;padding:2px 4px" title="Remove">&times;</button></td>';
+          h += '<td style="padding:5px 8px;text-align:center;white-space:nowrap">';
+          // Bank tab gets the add-to-list "+" alongside the remove
+          // "✕". Both buttons sized for touch: 32×32, 8px gap, full
+          // border so they read as tap targets rather than glyphs.
+          if (removeFromBank) {
+            h += '<button class="rb-row-btn rb-row-add" onclick="openBankAddPicker(this,\'' + esc(b.addr) + '\')" '
+              + 'data-i18n-title="add_to_list" title="Add to list" aria-label="Add to list">&#43;</button>';
+          }
+          h += '<button class="rb-row-btn rb-row-del" onclick="' + fn + '(\'' + esc(b.addr) + '\')" '
+            + 'title="Remove" aria-label="Remove">&times;</button>';
+          h += '</td>';
         }
         h += '</tr>';
       }
@@ -6335,12 +7509,16 @@
         if (!r.ok) throw new Error(await r.text());
         var data = await r.json();
         var board = data.scoreboard || [];
-        document.getElementById('resolverActiveCount').textContent = board.length;
         el.innerHTML = _buildScoreboardTable(board, true, false);
-        // Also fetch bank count for the tab badge
+        // Sync the Bank tab badge so it stays current while the user
+        // sits on the Active view.
         try {
           var br = await fetch('/api/resolvers/bank');
-          if (br.ok) { var bd = await br.json(); document.getElementById('resolverBankCount').textContent = bd.count || 0; }
+          if (br.ok) {
+            var bd = await br.json();
+            var bc = document.getElementById('resolverBankCount');
+            if (bc) bc.textContent = bd.count || 0;
+          }
         } catch (e2) { }
       } catch (e) { el.innerHTML = '<div style="color:var(--error)">' + esc(e.message) + '</div>' }
     }
@@ -6352,11 +7530,12 @@
         var data = await r.json();
         var bank = data.bank || [];
         var countEl = document.getElementById('resolverBankCount');
-        countEl.textContent = data.count || 0;
-        countEl.style.color = (data.count || 0) > 500 ? 'var(--error)' : '';
+        if (countEl) {
+          countEl.textContent = data.count || 0;
+          countEl.style.color = (data.count || 0) > 500 ? 'var(--error)' : '';
+        }
         var activeCount = 0;
         bank.forEach(function (b) { if (b.active) activeCount++ });
-        document.getElementById('resolverActiveCount').textContent = activeCount;
         updateResolversBadge(activeCount, data.count || 0);
         el.innerHTML = _buildScoreboardTable(bank, true, true);
         previewBankCleanup();
@@ -6364,12 +7543,14 @@
     }
     function switchResolverTab(tab) {
       currentResolverTab = tab;
-      document.getElementById('resolverTabActive').classList.toggle('active', tab === 'active');
-      document.getElementById('resolverTabBank').classList.toggle('active', tab === 'bank');
-      document.getElementById('resolverTabActive').style.borderBottom = tab === 'active' ? '2px solid var(--accent)' : 'none';
-      document.getElementById('resolverTabBank').style.borderBottom = tab === 'bank' ? '2px solid var(--accent)' : 'none';
-      document.getElementById('resolverPanelActive').style.display = tab === 'active' ? '' : 'none';
-      document.getElementById('resolverPanelBank').style.display = tab === 'bank' ? '' : 'none';
+      var pa = document.getElementById('resolverPanelActive');
+      var pb = document.getElementById('resolverPanelBank');
+      if (pa) pa.style.display = tab === 'active' ? '' : 'none';
+      if (pb) pb.style.display = tab === 'bank' ? '' : 'none';
+      // Tab styling lives on the dynamic strip — re-render so the
+      // accent underline tracks the new selection. renderResolverTabs
+      // also reads currentResolverTab and decorates the bank tab.
+      renderResolverTabs();
       if (tab === 'active') _fetchActiveBoard();
       else _fetchBankBoard();
     }
@@ -6383,6 +7564,8 @@
       }
       switchResolverTab('active');
       refreshResolversBadge();
+      // Populate the list pill strip at the top of the modal.
+      loadResolverLists();
       if (resolversRefreshTimer) clearInterval(resolversRefreshTimer);
       resolversRefreshTimer = setInterval(function () {
         if (!document.getElementById('resolversModal').classList.contains('active')) {
@@ -6587,6 +7770,7 @@
         settingsModal: function () { closeSettings() },
         profilesModal: function () { closeProfiles() },
         profileEditorModal: function () { closeProfileEditor && closeProfileEditor() },
+        shareProfileModal: function () { closeShareModal() },
         exportModal: function () { closeExportModal() },
         resolversModal: function () { closeResolversModal() },
         scannerModal: function () { closeScanner() },

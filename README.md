@@ -4,6 +4,17 @@ DNS-based feed reader for Telegram channels and public X accounts. Designed for 
 
 [English](README.md) | [فارسی](README-FA.md)
 
+## Download
+
+- **[Latest release](https://github.com/sartoopjj/thefeed/releases/latest)** — server / client binaries for every platform, plus Android APKs.
+- **Server one-liner** (Linux + systemd):
+  ```bash
+  sudo bash -c "$(curl -Ls https://raw.githubusercontent.com/sartoopjj/thefeed/main/scripts/install.sh)"
+  ```
+- **Android APK**: pick `arm64-v8a` for any phone newer than ~2017, `armeabi-v7a` for older 32-bit-only devices.
+
+Public configs to test with: [@thefeedconfig](https://t.me/thefeedconfig).
+
 ## How It Works
 
 ```
@@ -47,19 +58,9 @@ DNS-based feed reader for Telegram channels and public X accounts. Designed for 
 - Media type detection (`[IMAGE]`, `[VIDEO]`, etc.) and inline rendering
 - Live DNS query log in the browser
 
-## Anti-DPI Features
-
-- Variable response and query sizes to prevent fingerprinting
-- Multiple query encoding modes for stealth
-- **Resolver Bank**: centralized resolver pool shared by all profiles with persistent scoring and cleanup tools
-- **Resolver scoring**: per-resolver success-rate + latency scoreboard; high-scoring resolvers are picked more often via weighted-random selection
-- **Scatter mode**: same block fetched from N resolvers simultaneously, first response wins — faster fetches and implicit failover
-- Rate limiting and background noise traffic to blend in
-- Message compression to minimize query count
-
 ## Protocol
 
-All communication is encrypted with AES-256 and transmitted via standard DNS TXT queries and responses. Traffic is designed to blend with normal DNS activity. Message data is compressed before encryption.
+All communication is encrypted (AES-256) and rides on standard DNS TXT queries / responses, with variable padding and per-resolver scoring so traffic blends with normal DNS activity. Message data is deflated before encryption.
 
 ## Image and File Downloads
 
@@ -103,10 +104,6 @@ Server flags / env vars:
 | `--github-relay-ttl`          | `THEFEED_GITHUB_RELAY_TTL_MIN`       | `600` (min) | orphans pruned next refresh cycle  |
 
 The hourly DNS report includes `totalMediaQueries` and a `mediaCache` block (entries, bytes, hits, misses, evictions).
-
-## Downloads
-
-[Releases](https://github.com/sartoopjj/thefeed/releases)
 
 ## Donate:
 

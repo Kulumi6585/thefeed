@@ -8,6 +8,24 @@
 
 ---
 
+## دانلود
+
+- **[آخرین انتشار](https://github.com/sartoopjj/thefeed/releases/latest)** — باینری سرور و کلاینت برای همه پلتفرم‌ها به علاوهٔ APK اندروید.
+- **نصب سرور با یک خط** (لینوکس + systemd):
+<div dir="ltr" align="left">
+
+```bash
+sudo bash -c "$(curl -Ls https://raw.githubusercontent.com/sartoopjj/thefeed/main/scripts/install.sh)"
+```
+
+</div>
+
+- **APK اندروید**: گوشی‌های جدیدتر از حدود ۱۳۹۶ نسخه `arm64-v8a` و دستگاه‌های قدیمی ۳۲ بیتی نسخه `armeabi-v7a` را نصب کنند.
+
+کانفیگ‌های عمومی برای تست: [@thefeedconfig](https://t.me/thefeedconfig).
+
+---
+
 ## thefeed چیست؟
 
 thefeed یک سیستم تونل DNS است که به شما اجازه می‌دهد پیام‌های کانال‌های تلگرام را حتی وقتی تلگرام و اینترنت فیلتر شده، بخوانید. تنها چیزی که نیاز دارید **DNS** است — که تقریباً هیچ‌وقت مسدود نمی‌شود.

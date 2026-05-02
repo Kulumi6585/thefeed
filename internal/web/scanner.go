@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/sartoopjj/thefeed/internal/client"
 )
@@ -191,6 +192,10 @@ func (s *Server) handleScannerApply(w http.ResponseWriter, r *http.Request) {
 		Resolvers []string `json:"resolvers"`
 		Mode      string   `json:"mode"` // "append" or "overwrite"
 		ProfileID string   `json:"profileId"`
+		// ListName picks which named active-list receives these
+		// resolvers. Empty → currently-selected list, or "Default"
+		// for legacy installs that haven't been migrated yet.
+		ListName string `json:"listName,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON", 400)
@@ -249,6 +254,39 @@ func (s *Server) handleScannerApply(w http.ResponseWriter, r *http.Request) {
 		addToBank(pl, resolvers)
 	}
 
+	// Save under the requested list (or current selection / Default).
+	listName := sanitizeListName(req.ListName)
+	if listName == "" {
+		listName = strings.TrimSpace(pl.SelectedList)
+	}
+	if listName == "" && len(pl.ActiveLists) > 0 {
+		listName = pl.ActiveLists[0].Name
+	}
+	if listName == "" {
+		listName = defaultListName
+	}
+	target := findList(pl, listName)
+	if target == nil {
+		pl.ActiveLists = append(pl.ActiveLists, ActiveList{Name: listName})
+		target = &pl.ActiveLists[len(pl.ActiveLists)-1]
+	}
+	if req.Mode == "overwrite" {
+		target.Resolvers = append([]string(nil), resolvers...)
+	} else {
+		seen := map[string]bool{}
+		for _, r := range target.Resolvers {
+			seen[r] = true
+		}
+		for _, r := range resolvers {
+			if !seen[r] {
+				target.Resolvers = append(target.Resolvers, r)
+				seen[r] = true
+			}
+		}
+	}
+	target.LastUsed = time.Now().Unix()
+	pl.SelectedList = target.Name
+
 	if err := s.saveProfiles(pl); err != nil {
 		http.Error(w, fmt.Sprintf("save profiles: %v", err), 500)
 		return
@@ -277,6 +315,11 @@ func (s *Server) handleScannerApply(w http.ResponseWriter, r *http.Request) {
 		ctx := s.fetcherCtx
 		s.mu.RUnlock()
 		if fetcher != nil {
+			// Pin pool to the list, active to the just-scanned set
+			// (already verified by the scanner — no re-probe needed).
+			if target != nil && len(target.Resolvers) > 0 {
+				fetcher.UpdateResolverPool(target.Resolvers)
+			}
 			fetcher.SetActiveResolvers(resolvers)
 			s.saveLastScan(resolvers)
 		}
@@ -287,5 +330,6 @@ func (s *Server) handleScannerApply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.addLog(fmt.Sprintf("Scanner resolvers applied: %d resolvers (%s) to profile %s", len(resolvers), req.Mode, pl.Profiles[targetIdx].Nickname))
+	s.broadcast("event: update\ndata: \"resolver-lists\"\n\n")
 	writeJSON(w, map[string]any{"ok": true, "count": len(pl.ResolverBank)})
 }

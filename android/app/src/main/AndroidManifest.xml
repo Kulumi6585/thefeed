@@ -6,6 +6,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Saving downloads on Android 9 and below uses
+         Environment.getExternalStoragePublicDirectory which requires
+         WRITE_EXTERNAL_STORAGE. Android 10+ uses MediaStore (scoped
+         storage) and needs no permission, so cap maxSdkVersion at 28
+         to avoid asking for a no-op permission on modern devices. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <application
         android:allowBackup="true"

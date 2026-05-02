@@ -457,7 +457,12 @@ func (tr *TelegramReader) extractMessages(ctx context.Context, api *tg.Client, h
 		}
 
 		if chatType == protocol.ChatTypePrivate {
-			if fromID, ok := g.canonical.GetFromID(); ok {
+			// Outgoing messages get a sentinel prefix the client
+			// renders as [YOU] right-aligned, instead of the
+			// authenticated user's own name as a label.
+			if g.canonical.Out {
+				text = protocol.MediaMe + "\n" + text
+			} else if fromID, ok := g.canonical.GetFromID(); ok {
 				if pu, ok := fromID.(*tg.PeerUser); ok {
 					if name, ok := userNames[pu.UserID]; ok {
 						text = name + ": " + text

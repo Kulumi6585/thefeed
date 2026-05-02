@@ -80,6 +80,10 @@ const (
 	MediaContact  = "[CONTACT]"
 	MediaLocation = "[LOCATION]"
 	MediaReply    = "[REPLY]"
+	// MediaMe marks an outgoing private-chat message — sent by the
+	// authenticated user. The client renders these right-aligned with
+	// a [YOU] label instead of the sender-name prefix.
+	MediaMe = "[ME]"
 )
 
 // ChatType distinguishes channel types in metadata.

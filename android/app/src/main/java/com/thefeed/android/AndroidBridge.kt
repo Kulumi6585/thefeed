@@ -1,9 +1,11 @@
 package com.thefeed.android
 
+import android.Manifest
 import android.app.Activity
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -14,6 +16,8 @@ import android.util.Base64
 import android.util.Log
 import android.webkit.JavascriptInterface
 import android.widget.Toast
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
@@ -140,6 +144,18 @@ class AndroidBridge(private val activity: Activity) {
         val bytes = try { Base64.decode(base64, Base64.DEFAULT) }
                    catch (e: Exception) { toast("Save failed: bad data"); Log.e(TAG, "saveMedia decode", e); return false }
         val safe = sanitiseFilename(filename)
+        // Android 9 and below need WRITE_EXTERNAL_STORAGE granted at
+        // runtime — manifest entry alone isn't enough for "dangerous"
+        // permissions. Request it lazily; the system dialog returns
+        // asynchronously, so this call bails and the user re-clicks
+        // Save after granting.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            if (!hasLegacyStoragePermission()) {
+                requestLegacyStoragePermission()
+                toast("Storage permission needed — please tap Save again")
+                return false
+            }
+        }
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val resolver = activity.contentResolver
@@ -180,6 +196,24 @@ class AndroidBridge(private val activity: Activity) {
             Log.e(TAG, "saveMedia failed", e)
             toast("Save failed: ${e.message}")
             false
+        }
+    }
+
+    private fun hasLegacyStoragePermission(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) return true
+        return ContextCompat.checkSelfPermission(
+            activity,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requestLegacyStoragePermission() {
+        Handler(Looper.getMainLooper()).post {
+            ActivityCompat.requestPermissions(
+                activity,
+                arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),
+                REQ_LEGACY_STORAGE
+            )
         }
     }
 
@@ -255,6 +289,7 @@ class AndroidBridge(private val activity: Activity) {
     companion object {
         const val PREF_PASSWORD_HASH = "password_hash"
         const val PREF_LANG = "app_lang"
+        const val REQ_LEGACY_STORAGE = 0x501
         private const val TAG = "AndroidBridge"
     }
 }
