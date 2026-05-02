@@ -345,6 +345,15 @@ func TestHandleResolverListAddRejectsEmptyInput(t *testing.T) {
 // ===== writeListsInfo (with/without resolver addresses) =====
 
 func TestWriteListsInfoIncludeResolvers(t *testing.T) {
+	type listEntry struct {
+		Name      string   `json:"name"`
+		Count     int      `json:"count"`
+		Resolvers []string `json:"resolvers"`
+	}
+	type listResp struct {
+		Lists []listEntry `json:"lists"`
+	}
+
 	s := newTestServerWithProfiles(t, &ProfileList{
 		ActiveLists: []ActiveList{
 			{Name: "Home", Resolvers: []string{"a", "b"}},
@@ -353,28 +362,26 @@ func TestWriteListsInfoIncludeResolvers(t *testing.T) {
 	})
 	rec := httptest.NewRecorder()
 	s.writeListsInfo(rec, true)
-	var resp struct {
-		Lists []struct {
-			Name      string   `json:"name"`
-			Count     int      `json:"count"`
-			Resolvers []string `json:"resolvers"`
-		} `json:"lists"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+	var withAddrs listResp
+	if err := json.Unmarshal(rec.Body.Bytes(), &withAddrs); err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Lists) != 1 || resp.Lists[0].Count != 2 || len(resp.Lists[0].Resolvers) != 2 {
-		t.Errorf("response = %+v", resp)
+	if len(withAddrs.Lists) != 1 || withAddrs.Lists[0].Count != 2 || len(withAddrs.Lists[0].Resolvers) != 2 {
+		t.Errorf("with-resolvers response = %+v", withAddrs)
 	}
 
-	// Default (no flag) omits the addresses.
+	// Default (no flag) omits the addresses. Use a *separate* resp
+	// var — Go's json.Unmarshal leaves untouched fields untouched
+	// when reusing a populated struct, so reusing the previous
+	// `withAddrs` would falsely show Resolvers carried over.
 	rec = httptest.NewRecorder()
 	s.writeListsInfo(rec)
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+	var noAddrs listResp
+	if err := json.Unmarshal(rec.Body.Bytes(), &noAddrs); err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Lists) != 1 || len(resp.Lists[0].Resolvers) != 0 {
-		t.Errorf("default response leaked addresses: %+v", resp)
+	if len(noAddrs.Lists) != 1 || len(noAddrs.Lists[0].Resolvers) != 0 {
+		t.Errorf("default response leaked addresses: %+v", noAddrs)
 	}
 }
 
