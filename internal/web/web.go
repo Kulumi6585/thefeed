@@ -1740,22 +1740,28 @@ func (s *Server) handleRemoveResolver(w http.ResponseWriter, r *http.Request) {
 	// re-applies the on-disk list verbatim. Scope is intentionally narrow:
 	// only the active list is touched — the bank and other named lists
 	// keep the resolver until the user removes it from the bank.
+	listChanged := false
 	if pl, err := s.loadProfiles(); err == nil && pl != nil {
 		if list := findList(pl, pl.SelectedList); list != nil {
 			out := list.Resolvers[:0]
-			changed := false
 			for _, r := range list.Resolvers {
 				if r == req.Addr {
-					changed = true
+					listChanged = true
 					continue
 				}
 				out = append(out, r)
 			}
-			if changed {
+			if listChanged {
 				list.Resolvers = out
 				_ = s.saveProfiles(pl)
 			}
 		}
+	}
+	if listChanged {
+		// Push tab counts to any open Resolver Bank modal — without
+		// this, the badge stays at the old count until the user
+		// switches lists.
+		s.broadcast("event: update\ndata: \"resolver-lists\"\n\n")
 	}
 	writeJSON(w, map[string]any{"ok": true})
 }
@@ -1931,6 +1937,7 @@ func (s *Server) handleResolverBank(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+		s.broadcast("event: update\ndata: \"resolver-lists\"\n\n")
 		writeJSON(w, map[string]any{"ok": true, "removed": removed, "remaining": len(pl.ResolverBank)})
 
 	default:
@@ -2054,6 +2061,7 @@ func (s *Server) handleResolverBankCleanup(w http.ResponseWriter, r *http.Reques
 			}
 		}
 	}
+	s.broadcast("event: update\ndata: \"resolver-lists\"\n\n")
 	writeJSON(w, map[string]any{"ok": true, "removed": removed, "remaining": len(filtered)})
 }
 
