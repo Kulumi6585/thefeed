@@ -3466,6 +3466,12 @@
     // ===== MOBILE NAV =====
     var mobileQuery = window.matchMedia('(max-width: 768px)');
     var chatIsOpen = false;
+    // Desktop: chat is always laid out alongside the sidebar.
+    // Mobile: chat is only visible when .chat-open is set.
+    function _chatPanelVisible() {
+      return !mobileQuery.matches || document.getElementById('app').classList.contains('chat-open');
+    }
+
     function openChat() {
       chatIsOpen = true;
       if (mobileQuery.matches) {
@@ -4490,12 +4496,15 @@
         } else if (data && typeof data === 'object' && data.channel) {
           delete refreshingChannels[data.channel]; var fb2 = document.getElementById('prog-fetch-ch-' + data.channel); if (fb2) fb2.remove();
           if (data.channel === manualRefreshChannel) manualRefreshChannel = 0;
-          // Only re-render if the user is STILL on that channel right now —
-          // selectedChannel may have changed during the awaited loadChannels.
-          if (data.channel === selectedChannel) await loadMessages(data.channel)
+          // Re-render only when the chat panel is actually visible.
+          // On mobile the panel slides on/off via a CSS transform; if
+          // the user backs out while a fetch is in flight, rendering
+          // mid-transition stalls the slide and the layout sticks at
+          // ~90% chat / 10% sidebar (back button looks frozen).
+          if (data.channel === selectedChannel && _chatPanelVisible()) await loadMessages(data.channel)
         } else if (snapChannel > 0 && snapChannel === selectedChannel) {
           delete refreshingChannels[snapChannel]; var fb3 = document.getElementById('prog-fetch-ch-' + snapChannel); if (fb3) fb3.remove();
-          await loadMessages(snapChannel)
+          if (_chatPanelVisible()) await loadMessages(snapChannel)
         }
         updateSendPanel();
       });
