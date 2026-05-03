@@ -143,10 +143,10 @@ jobs:
       - name: Compress with UPX
         if: matrix.goos == 'linux' || matrix.goos == 'windows'
         run: |
-          # -9 alone (no --lzma) is ~4× faster, only ~5% larger.
-          # xargs -P fans out across all CPUs.
+          # Keep best/lzma for small binaries; xargs -P does them
+          # in parallel across CPUs so wall time stays low.
           find build -maxdepth 1 -type f -print0 \
-            | xargs -0 -n1 -P "$(nproc)" -I{} sh -c 'upx -9 "$1" || true' _ {}
+            | xargs -0 -n1 -P "$(nproc)" -I{} sh -c 'upx --best --lzma "$1" || true' _ {}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
