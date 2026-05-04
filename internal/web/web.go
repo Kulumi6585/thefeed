@@ -2279,12 +2279,13 @@ func addToBank(pl *ProfileList, resolvers []string) int {
 }
 
 // persistResolverScores saves the current fetcher stats to profiles.json.
+// Not serialised by profilesMu — initFetcher holds s.mu while calling this,
+// and grabbing profilesMu here would risk AB-BA with handlers that take
+// profilesMu first. The score map-merge is benign under last-writer-wins.
 func (s *Server) persistResolverScores(stats map[string][3]int64) {
 	if len(stats) == 0 {
 		return
 	}
-	s.profilesMu.Lock()
-	defer s.profilesMu.Unlock()
 	pl, err := s.loadProfiles()
 	if err != nil || pl == nil {
 		return
@@ -2363,9 +2364,9 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.profilesMu.Lock()
-		defer s.profilesMu.Unlock()
 		pl, err := s.loadProfilesExisting()
 		if err != nil {
+			s.profilesMu.Unlock()
 			http.Error(w, fmt.Sprintf("load: %v", err), 500)
 			return
 		}
@@ -2444,32 +2445,42 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 			}
 
 		default:
+			s.profilesMu.Unlock()
 			http.Error(w, "unknown action", 400)
 			return
 		}
 
-		if err := s.saveProfiles(pl); err != nil {
-			http.Error(w, fmt.Sprintf("save profiles: %v", err), 500)
-			return
-		}
-
-		// Only re-init the fetcher when the active profile's config was modified.
+		saveErr := s.saveProfiles(pl)
+		var activeConfig *Config
 		if needsReinit && pl.Active != "" {
 			for _, p := range pl.Profiles {
 				if p.ID == pl.Active {
-					_ = s.saveConfig(&p.Config)
-					s.mu.Lock()
-					s.config = &p.Config
-					s.mu.Unlock()
-					if err := s.initFetcher(); err != nil {
-						log.Printf("[web] re-init fetcher after profile change: %v", err)
-					} else if req.SkipCheck {
-						s.skipCheckerUseSaved()
-					} else {
-						s.startCheckerThenRefresh()
-					}
+					cfg := p.Config
+					activeConfig = &cfg
 					break
 				}
+			}
+		}
+		s.profilesMu.Unlock()
+
+		if saveErr != nil {
+			http.Error(w, fmt.Sprintf("save profiles: %v", saveErr), 500)
+			return
+		}
+
+		// initFetcher takes s.mu — call it OUTSIDE profilesMu so handlers
+		// that need both don't AB-BA against it.
+		if activeConfig != nil {
+			_ = s.saveConfig(activeConfig)
+			s.mu.Lock()
+			s.config = activeConfig
+			s.mu.Unlock()
+			if err := s.initFetcher(); err != nil {
+				log.Printf("[web] re-init fetcher after profile change: %v", err)
+			} else if req.SkipCheck {
+				s.skipCheckerUseSaved()
+			} else {
+				s.startCheckerThenRefresh()
 			}
 		}
 
@@ -2976,8 +2987,6 @@ func (s *Server) persistLastScanToProfiles(resolvers []string) {
 // a populated saved list was applied; false routes the caller to the
 // last_scan.json / full-scan fallback chain.
 func (s *Server) applySelectedList() bool {
-	s.profilesMu.Lock()
-	defer s.profilesMu.Unlock()
 	pl, err := s.loadProfiles()
 	if err != nil || pl == nil {
 		return false

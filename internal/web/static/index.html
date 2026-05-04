@@ -3022,7 +3022,7 @@
         ok: 'باشه',
         cancel_media_msg: 'دانلود این رسانه لغو شود؟', dismiss: 'بستن',
         write_message: 'پیام بنویسید...', configure_server: 'برای شروع یک سرور راه‌اندازی کنید',
-        set_up: 'راه‌اندازی', switching: 'در حال تغییر پروفایل...',
+        set_up: 'راه‌اندازی', switching: 'در حال تغییر پروفایل...', select_channel_hint: 'یک کانال را برای دیدن پیام‌ها انتخاب کنید',
         font_size: 'اندازه قلم', debug_mode: 'حالت دیباگ', language: 'زبان',
         next_fetch_info: 'زمان باقی‌مانده تا دریافت بعدی محتوا توسط سرور',
         no_profiles: 'هنوز پروفایلی وجود ندارد', add_profile: '+ پروفایل جدید',
@@ -3232,7 +3232,7 @@
         ok: 'OK',
         cancel_media_msg: 'Cancel this download?', dismiss: 'Dismiss',
         write_message: 'Write a message...', configure_server: 'Configure a server to start reading',
-        set_up: 'Set Up', switching: 'Switching profile...',
+        set_up: 'Set Up', switching: 'Switching profile...', select_channel_hint: 'Pick a channel to view its messages',
         font_size: 'Font Size', debug_mode: 'Debug mode', language: 'Language',
         next_fetch_info: 'Time until the server next fetches fresh channel content',
         no_profiles: 'No profiles yet', add_profile: '+ Add Profile',
@@ -3549,7 +3549,11 @@
         // Land on the channel list; don't auto-open the first channel.
         // Users on mobile may be tapping while we load and the auto-open
         // races with their touch.
-        if (!channels || channels.length === 0) { showInitProgress(); await doRefresh(); }
+        if (!channels || channels.length === 0) {
+          showInitProgress(); await doRefresh();
+        } else {
+          document.getElementById('messages').innerHTML = '<div class="empty-state"><p>' + (t('select_channel_hint') || '') + '</p></div>';
+        }
         startAutoRefresh();
       } catch (e) { }
     }
@@ -4758,14 +4762,20 @@
         var r = await fetch('/api/profiles/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id, skipCheck: skipCheck }) });
         if (!r.ok) return;
         activeProfileId = id; selectedChannel = 0; channels = [];
+        refreshingChannels = {};
+        progressSilencedUntil = Date.now() + 5000;
+        // Reset the chat header so it doesn't keep showing the previous
+        // profile's channel name/handle while the user picks a new one.
+        document.getElementById('chatName').textContent = 'thefeed';
+        document.getElementById('chatSub').textContent = '';
         document.getElementById('progressPanel').innerHTML = '';
-        document.getElementById('messages').innerHTML = '<div class="empty-state"><p>' + t('switching') + '</p></div>';
+        document.getElementById('messages').innerHTML = '<div class="empty-state"><p>' + (t('select_channel_hint') || t('switching')) + '</p></div>';
+        // On desktop the chat panel is always visible; collapse it back to
+        // the sidebar so the empty state doesn't sit next to a stale header.
+        openSidebar();
         await loadProfiles(); closeProfiles();
-        // selectChannel races with in-flight touch on mobile, skip there.
-        var preLoadIsOnSidebar = !chatIsOpen;
         await loadChannels();
-        if (channels.length === 0) { showInitProgress(); await doRefresh(); return; }
-        if (preLoadIsOnSidebar && !chatIsOpen && !mobileQuery.matches) await selectChannel(1);
+        if (channels.length === 0) { showInitProgress(); await doRefresh(); }
       } catch (e) { }
     }
 
@@ -6904,7 +6914,12 @@
       }
     }
 
+    var progressSilencedUntil = 0;
     function updateProgressDisplay(line) {
+      // Silence briefly across a profile switch — log events from the
+      // previous profile's in-flight fetch keep arriving until the old
+      // fetcher's context cancellation lands.
+      if (Date.now() < progressSilencedUntil) return;
       var match = line.match(/Channel\s+(\d+)/); if (!match) return;
       var channelNum = parseInt(match[1]);
       var fracMatch = line.match(/\((\d+)\/(\d+)\)/);
