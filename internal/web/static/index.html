@@ -905,6 +905,31 @@
       background: rgba(255, 255, 255, .3)
     }
 
+    .media-lightbox-speed {
+      position: absolute;
+      top: 16px;
+      right: 64px;
+      min-width: 44px;
+      height: 32px;
+      padding: 0 10px;
+      border: none;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, .15);
+      color: #fff;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent
+    }
+
+    .media-lightbox-speed:hover {
+      background: rgba(255, 255, 255, .3)
+    }
+
     .media-action {
       display: flex;
       align-items: center;
@@ -2902,7 +2927,7 @@
             </div>
             <div class="form-group">
               <label data-i18n="scanner_timeout">Timeout (s)</label>
-              <input type="number" id="scanTimeout" value="15" min="1" max="60">
+              <input type="number" id="scanTimeout" value="10" min="1" max="60">
             </div>
             <div class="form-group">
               <label data-i18n="scanner_max_ips">Max IPs (0=all)</label>
@@ -2989,7 +3014,7 @@
         download: 'دانلود', media_too_large: 'حجم فایل بیش از حد مجاز سرور است', media_failed: 'دانلود ناموفق بود',
         downloading: 'در حال دانلود...', media_open: 'باز کردن', media_play: 'پخش', media_save: 'ذخیره', media_share: 'اشتراک‌گذاری', close: 'بستن',
         queued: 'در صف', media_hash_mismatch: 'هش محتوا با پیام مطابقت ندارد',
-        blocks_label: 'بلاک',
+        blocks_label: 'قطعه',
         media_blocked_title: 'برای دانلود در دسترس نیست',
         media_blocked_too_large: 'حجم این فایل ({size}) بیشتر از سقف کش سرور ({limit}) است.',
         media_blocked_unavailable: 'سرور این فایل را کش نکرده است؛ احتمالاً از سقف {limit} بزرگ‌تر است یا دریافت آن ناموفق بوده.',
@@ -3199,7 +3224,7 @@
         download: 'Download', media_too_large: 'Too large for server cache', media_failed: 'Download failed',
         downloading: 'Downloading...', media_open: 'Open', media_play: 'Play', media_save: 'Save', media_share: 'Share', close: 'Close',
         queued: 'Queued', media_hash_mismatch: 'Content hash does not match the message',
-        blocks_label: 'blocks',
+        blocks_label: 'chunks',
         media_blocked_title: 'Not available for download',
         media_blocked_too_large: 'This file ({size}) is larger than the server\'s cache limit ({limit}).',
         media_blocked_unavailable: 'The server didn\'t cache this file. It may exceed the {limit} cache limit, or the upstream fetch failed.',
@@ -3521,8 +3546,10 @@
         renderLatestVersion();
         updateNextFetchDisplay();
         await loadChannels();
-        if (channels && channels.length > 0) await selectChannel(1);
-        else { showInitProgress(); await doRefresh(); openChat() }
+        // Land on the channel list; don't auto-open the first channel.
+        // Users on mobile may be tapping while we load and the auto-open
+        // races with their touch.
+        if (!channels || channels.length === 0) { showInitProgress(); await doRefresh(); }
         startAutoRefresh();
       } catch (e) { }
     }
@@ -3638,17 +3665,46 @@
     }
 
     // ===== RESCAN PROMPT =====
-    function showRescanPrompt(count) {
+    // Resolves true → skip rescan. Honors scanPromptOff.
+    function askRescan(count) {
       return new Promise(function (resolve) {
+        if (localStorage.getItem('thefeed_scan_prompt_off') === '1') { resolve(true); return; }
+        if (!count || count <= 0) { resolve(true); return; }
         var msg = t('rescan_prompt_msg').replace('{n}', count);
         var overlay = document.createElement('div');
         overlay.className = 'modal-overlay active';
-        overlay.innerHTML = '<div class="modal" style="max-width:380px"><h2>' + t('rescan_prompt_title') + '</h2><p style="font-size:13px;color:var(--text-dim);margin-bottom:16px;line-height:1.6">' + esc(msg) + '</p><div class="modal-actions"><button class="btn btn-primary" id="rescanPromptSkip">' + t('rescan_prompt_skip') + '</button><button class="btn btn-outline" id="rescanPromptYes">' + t('rescan_prompt_yes') + '</button></div></div>';
+        overlay.innerHTML =
+          '<div class="modal" style="max-width:380px">'
+          + '<h2 style="margin-top:0">' + esc(t('rescan_prompt_title')) + '</h2>'
+          + '<p style="font-size:13px;color:var(--text-dim);margin-bottom:16px;line-height:1.6">' + esc(msg) + '</p>'
+          + '<div style="display:flex;justify-content:flex-end;margin-bottom:10px">'
+          + '<button class="btn btn-flat" id="rescanPromptNever" style="font-size:11px;padding:4px 10px;color:var(--text-dim)">' + esc(t('dont_show_again')) + '</button>'
+          + '</div>'
+          + '<div class="modal-actions">'
+          + '<button class="btn btn-outline" id="rescanPromptYes">' + esc(t('rescan_prompt_yes')) + '</button>'
+          + '<button class="btn btn-primary" id="rescanPromptSkip">' + esc(t('rescan_prompt_skip')) + '</button>'
+          + '</div></div>';
         document.body.appendChild(overlay);
-        document.getElementById('rescanPromptSkip').onclick = function () { document.body.removeChild(overlay); resolve(true) };
-        document.getElementById('rescanPromptYes').onclick = function () { document.body.removeChild(overlay); resolve(false) };
+        var done = function (skip) {
+          if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+          resolve(skip);
+        };
+        document.getElementById('rescanPromptSkip').onclick = function () { done(true) };
+        document.getElementById('rescanPromptYes').onclick = function () { done(false) };
+        document.getElementById('rescanPromptNever').onclick = function () {
+          localStorage.setItem('thefeed_scan_prompt_off', '1');
+          try {
+            fetch('/api/settings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ scanPromptOff: true })
+            });
+          } catch (e) { }
+          done(true);
+        };
       });
     }
+    function showRescanPrompt(count) { return askRescan(count); } // legacy alias
     function showConfirmDialog(msg, yesText, noText) {
       return new Promise(function (resolve) {
         var overlay = document.createElement('div');
@@ -4688,7 +4744,6 @@
 
     async function activateProfile(id) {
       if (id === activeProfileId) { closeProfiles(); return }
-      // If there are active resolvers, ask user whether to rescan; otherwise skip.
       var skipCheck = true;
       try {
         var bankR = await fetch('/api/resolvers/bank');
@@ -4696,19 +4751,21 @@
           var bankD = await bankR.json();
           var activeN = 0;
           (bankD.bank || []).forEach(function (b) { if (b.active) activeN++ });
-          if (activeN > 0) {
-            skipCheck = await showConfirmDialog(t('rescan_prompt_msg').replace('{n}', activeN), t('rescan_prompt_skip'), t('rescan_prompt_yes'));
-          }
+          if (activeN > 0) skipCheck = await askRescan(activeN);
         }
-      } catch (e) { /* ignore — default to skipCheck=true */ }
+      } catch (e) { }
       try {
         var r = await fetch('/api/profiles/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id, skipCheck: skipCheck }) });
         if (!r.ok) return;
-        activeProfileId = id; selectedChannel = 0; channels = []; document.getElementById('progressPanel').innerHTML = ''; document.getElementById('messages').innerHTML = '<div class="empty-state"><p>' + t('switching') + '</p></div>';
+        activeProfileId = id; selectedChannel = 0; channels = [];
+        document.getElementById('progressPanel').innerHTML = '';
+        document.getElementById('messages').innerHTML = '<div class="empty-state"><p>' + t('switching') + '</p></div>';
         await loadProfiles(); closeProfiles();
+        // selectChannel races with in-flight touch on mobile, skip there.
+        var preLoadIsOnSidebar = !chatIsOpen;
         await loadChannels();
-        if (channels.length > 0) await selectChannel(1);
-        else { showInitProgress(); await doRefresh() }
+        if (channels.length === 0) { showInitProgress(); await doRefresh(); return; }
+        if (preLoadIsOnSidebar && !chatIsOpen && !mobileQuery.matches) await selectChannel(1);
       } catch (e) { }
     }
 
@@ -4888,7 +4945,6 @@
       }
       var action = editingProfileId ? 'update' : 'create';
       var wasFirst = !profiles || !profiles.profiles || profiles.profiles.length === 0;
-      // If there are active resolvers, ask user whether to rescan; otherwise skip.
       var skipCheck = true;
       var isActiveEdit = editingProfileId && editingProfileId === activeProfileId;
       if (isActiveEdit || wasFirst) {
@@ -4899,7 +4955,7 @@
             var activeN = 0;
             (bankD.bank || []).forEach(function (b) { if (b.active) activeN++ });
             if (activeN > 0) {
-              skipCheck = await showConfirmDialog(t('rescan_prompt_msg').replace('{n}', activeN), t('rescan_prompt_skip'), t('rescan_prompt_yes'));
+              skipCheck = await askRescan(activeN);
             }
           }
         } catch (e) { /* ignore — default to skipCheck=true */ }
@@ -5654,9 +5710,9 @@
       }
     }
 
-    // Single quick retry on transient errors (network blip, 5xx). 404 / 429
-    // skip retry entirely — file genuinely missing or rate-limited.
-    var GH_MAX_RETRIES = 2, GH_RETRY_DELAY_MS = 500;
+    // GH_MAX_ATTEMPTS = total tries (initial + retries). 2 = 1 initial + 1 retry.
+    // 404 / 429 skip retry entirely — file genuinely missing or rate-limited.
+    var GH_MAX_ATTEMPTS = 2, GH_RETRY_DELAY_MS = 500;
 
     async function mediaRunDownload(domID, opts) {
       opts = opts || {};
@@ -5713,7 +5769,7 @@
       async function handleFastFailure(reason, status) {
         attempt++;
         var skipRetry = (status === 404 || status === 429);
-        if (!skipRetry && attempt < GH_MAX_RETRIES) {
+        if (!skipRetry && attempt < GH_MAX_ATTEMPTS) {
           await new Promise(function (r) { setTimeout(r, GH_RETRY_DELAY_MS); });
           runOnce();
           return;
@@ -6146,7 +6202,10 @@
       var overlay = document.createElement('div');
       overlay.id = 'mediaLightbox';
       overlay.className = 'media-lightbox';
-      overlay.innerHTML = '<button class="media-lightbox-close" type="button" aria-label="' + esc(t('close') || 'Close') + '">&times;</button>' + element;
+      overlay.innerHTML =
+        '<button class="media-lightbox-speed" type="button" aria-label="Playback speed">1x</button>'
+        + '<button class="media-lightbox-close" type="button" aria-label="' + esc(t('close') || 'Close') + '">&times;</button>'
+        + element;
       var close = function () {
         overlay.removeEventListener('click', onClick);
         document.removeEventListener('keydown', onKey);
@@ -6165,6 +6224,46 @@
       document.addEventListener('keydown', onKey);
       document.body.appendChild(overlay);
       mediaLightboxCloser = close;
+
+      // Playback-speed cycling. Standard HTML5 playbackRate — supported
+      // on every modern WebView, no native bridge needed. Pitch is
+      // preserved by default in Chromium / WebKit (preservesPitch=true).
+      var speeds = [1, 1.25, 1.5, 2];
+      var saved = parseFloat(localStorage.getItem('thefeed_play_speed'));
+      var idx = speeds.indexOf(saved);
+      if (idx < 0) idx = 0;
+      var media = overlay.querySelector('audio,video');
+      var speedBtn = overlay.querySelector('.media-lightbox-speed');
+      function applySpeed() {
+        var s = speeds[idx];
+        if (media) {
+          try { media.playbackRate = s; } catch (e) { }
+          // Webkit needs the prefixed flag for pitch preservation.
+          try { media.preservesPitch = true; } catch (e) { }
+          try { media.webkitPreservesPitch = true; } catch (e) { }
+        }
+        if (speedBtn) speedBtn.textContent = (s === Math.floor(s) ? s : s.toFixed(2).replace(/0$/, '')) + 'x';
+        localStorage.setItem('thefeed_play_speed', String(s));
+      }
+      // Re-apply on every fresh `loadeddata` — some WebViews reset the
+      // rate when the source becomes ready.
+      if (media) media.addEventListener('loadeddata', applySpeed);
+      applySpeed();
+      if (speedBtn) {
+        // Coalesce rapid duplicate clicks. Some Android WebView builds
+        // fire click twice per tap (touchend + synthesized 300ms tap),
+        // which made one fast tap skip a step (1 → 1.5). 250 ms is well
+        // under any human double-tap interval.
+        var lastClickAt = 0;
+        speedBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var now = Date.now();
+          if (now - lastClickAt < 250) return;
+          lastClickAt = now;
+          idx = (idx + 1) % speeds.length;
+          applySpeed();
+        });
+      }
     }
 
     function mediaFilenameFor(msgID, tag, mime) {
@@ -6247,6 +6346,13 @@
         var dy = t0.clientY - t1.clientY;
         return Math.hypot(dx, dy);
       }
+      function clampPan() {
+        if (scale <= 1) { translateX = 0; translateY = 0; return; }
+        var maxX = (el.offsetWidth * (scale - 1)) / 2;
+        var maxY = (el.offsetHeight * (scale - 1)) / 2;
+        translateX = Math.max(-maxX, Math.min(maxX, translateX));
+        translateY = Math.max(-maxY, Math.min(maxY, translateY));
+      }
       el.addEventListener('touchstart', function (e) {
         if (e.touches.length === 2) {
           pinchStartDist = distance(e.touches[0], e.touches[1]);
@@ -6269,15 +6375,24 @@
           e.preventDefault();
           translateX = e.touches[0].clientX - startTX;
           translateY = e.touches[0].clientY - startTY;
+          clampPan();
           apply();
         }
       }, { passive: false });
-      el.addEventListener('touchend', function () {
+      el.addEventListener('touchend', function (e) {
         lastTouchEnd = Date.now();
-        // Snap back: clear busy flag a tick later so the trailing
-        // synthetic click event can be filtered.
         setTimeout(function () { if (busyCb) busyCb(false); }, 50);
         pinchStartDist = 0;
+        // 2→1 finger: re-seed pan origin so the leftover finger doesn't
+        // compute translation against stale startTX/startTY (=0) and snap
+        // the image off-screen.
+        if (e.touches.length === 1 && scale > 1) {
+          startTX = e.touches[0].clientX - translateX;
+          startTY = e.touches[0].clientY - translateY;
+        } else if (e.touches.length === 0) {
+          clampPan();
+          apply();
+        }
       });
       el.addEventListener('click', function (e) {
         // Ignore clicks that immediately follow a pinch.
@@ -7097,7 +7212,7 @@
         preset: scannerActivePreset || undefined,
         profileId: document.getElementById('scanProfile').value,
         rateLimit: parseInt(document.getElementById('scanRateLimit').value) || 50,
-        timeout: parseInt(document.getElementById('scanTimeout').value) || 15,
+        timeout: parseInt(document.getElementById('scanTimeout').value) || 10,
         maxIPs: parseInt(document.getElementById('scanMaxIPs').value) || 0,
         expandSubnet: document.getElementById('scanExpand').checked,
         queryMode: document.getElementById('scanQueryMode').value
@@ -7711,11 +7826,23 @@
       var file = inp.files[0];
       if (file.size > 10 * 1024 * 1024) { showToast('File too large (max 10MB)'); return }
       try {
-        var r = await fetch('/api/bg-image', { method: 'POST', body: file });
+        // Buffer via FileReader so content:// URIs from Google Photos
+        // work too — fetch's stream path fails on those in some WebViews.
+        var buf = await new Promise(function (resolve, reject) {
+          var fr = new FileReader();
+          fr.onload = function () { resolve(fr.result); };
+          fr.onerror = function () { reject(fr.error || new Error('read failed')); };
+          fr.readAsArrayBuffer(file);
+        });
+        var r = await fetch('/api/bg-image', {
+          method: 'POST',
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          body: buf
+        });
         if (!r.ok) { showToast(await r.text()); return }
         _setBg('/api/bg-image?t=' + Date.now());
         showToast(t('apply'));
-      } catch (e) { showToast(e.message); }
+      } catch (e) { showToast((e && e.message) || 'failed'); }
     }
     async function clearBgImage() {
       try { await fetch('/api/bg-image', { method: 'DELETE' }) } catch (e) { }
