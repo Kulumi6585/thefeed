@@ -4542,7 +4542,8 @@
         await loadChannels();
         if (wasEmpty && channels.length > 0 && selectedChannel === 0) {
           closeProfiles();
-          await selectChannel(1); return
+          document.getElementById('messages').innerHTML = '<div class="empty-state"><p>' + (t('select_channel_hint') || '') + '</p></div>';
+          return;
         }
         if (data && typeof data === 'object' && data.type === 'no_changes') {
           // Only show the toast if the user explicitly asked for this
