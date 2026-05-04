@@ -930,6 +930,227 @@
       background: rgba(255, 255, 255, .3)
     }
 
+    /* BEGIN telemirror */
+    .tm-no-scroll { overflow: hidden }
+    .tm-modal {
+      position: fixed; inset: 0; z-index: 9000;
+      background: var(--bg);
+      display: none;
+      flex-direction: column;
+      color: var(--text)
+    }
+    .tm-modal.active { display: flex }
+
+    .tm-topbar {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 16px; min-height: 56px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, var(--bg-elevated, var(--bg)), var(--bg));
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+      flex-shrink: 0
+    }
+    .tm-back, .tm-menu {
+      background: none; border: 1px solid transparent; color: var(--text);
+      font-size: 16px; cursor: pointer; padding: 6px 10px; border-radius: 8px;
+      transition: background .12s, border-color .12s
+    }
+    .tm-back:hover, .tm-menu:hover { background: var(--border); border-color: var(--border) }
+    .tm-menu { display: none }
+    @media (max-width: 768px) { .tm-menu { display: inline-flex } }
+
+    .tm-topbar-info { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0 }
+    .tm-topbar-meta { min-width: 0; flex: 1 }
+    .tm-topbar-name { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+    .tm-topbar-sub { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px }
+
+    .tm-avatar {
+      border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 600; font-size: 16px;
+      overflow: hidden; flex-shrink: 0;
+      background: var(--accent);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.08), 0 1px 2px rgba(0,0,0,.15);
+      position: relative
+    }
+    .tm-avatar img {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%; object-fit: cover; display: block
+    }
+    .tm-avatar-initial {
+      pointer-events: none; user-select: none;
+      display: flex; align-items: center; justify-content: center;
+      width: 100%; height: 100%
+    }
+
+    .tm-body { flex: 1; min-height: 0; display: flex; position: relative }
+    .tm-sidebar {
+      width: 320px; flex-shrink: 0;
+      border-right: 1px solid var(--border);
+      background: var(--bg-elevated, var(--bg));
+      display: flex; flex-direction: column; min-height: 0
+    }
+    @media (max-width: 768px) {
+      .tm-sidebar {
+        position: absolute; top: 0; bottom: 0; left: 0; width: 86%; max-width: 340px;
+        z-index: 2; transform: translateX(-100%); transition: transform .22s ease;
+        box-shadow: 4px 0 24px rgba(0,0,0,.0)
+      }
+      .tm-sidebar.open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,.32) }
+    }
+    .tm-disclaimer {
+      padding: 12px 14px; margin: 10px;
+      font-size: 11px; color: var(--text-dim); line-height: 1.6;
+      background: var(--bg);
+      border: 1px solid var(--border); border-radius: 10px;
+      border-inline-start: 3px solid var(--accent)
+    }
+    .tm-add-row {
+      display: flex; gap: 6px; padding: 0 10px 10px;
+      border-bottom: 1px solid var(--border)
+    }
+    .tm-add-row input {
+      flex: 1; padding: 8px 12px; font-size: 13px;
+      background: var(--bg); color: var(--text);
+      border: 1px solid var(--border); border-radius: 8px;
+      font-family: inherit;
+      transition: border-color .12s
+    }
+    .tm-add-row input:focus { outline: none; border-color: var(--accent) }
+    .tm-add-row .btn { padding: 8px 14px; font-size: 13px; border-radius: 8px }
+
+    .tm-channels-list { flex: 1; overflow-y: auto; padding: 6px }
+    .tm-channel-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 10px; cursor: pointer;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      transition: background .12s, border-color .12s;
+      margin-bottom: 2px
+    }
+    .tm-channel-item:hover { background: var(--bg); border-color: var(--border) }
+    .tm-channel-item.active {
+      background: color-mix(in oklab, var(--accent) 18%, transparent);
+      border-color: var(--accent)
+    }
+    .tm-channel-item.active .tm-channel-item-name { color: var(--accent) }
+    .tm-channel-item-meta { flex: 1; min-width: 0 }
+    .tm-channel-item-name {
+      font-size: 13px; font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis
+    }
+    .tm-pin { font-size: 9px; opacity: .55; margin-inline-start: 4px }
+    .tm-x {
+      background: none; border: 1px solid transparent; color: inherit;
+      font-size: 16px; cursor: pointer; opacity: .45;
+      padding: 2px 7px; border-radius: 6px;
+      transition: background .12s, opacity .12s
+    }
+    .tm-x:hover { opacity: 1; background: var(--border) }
+
+    .tm-content {
+      flex: 1; overflow-y: auto;
+      padding: 18px 16px 40px;
+      background:
+        radial-gradient(circle at 25% 0%, color-mix(in oklab, var(--accent) 6%, transparent), transparent 40%),
+        var(--bg);
+      display: flex; flex-direction: column; gap: 12px
+    }
+    .tm-empty {
+      margin: auto; padding: 32px 24px;
+      text-align: center; color: var(--text-dim); font-size: 13px
+    }
+
+    .tm-channel-desc {
+      max-width: 720px; width: 100%; margin: 0 auto 4px;
+      padding: 12px 16px; font-size: 13px; color: var(--text-dim);
+      line-height: 1.7;
+      background: var(--bg-elevated, var(--bg));
+      border: 1px solid var(--border); border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.04)
+    }
+    .tm-channel-desc a { color: var(--accent) }
+
+    .tm-post {
+      max-width: 720px; width: 100%; margin: 0 auto;
+      background: var(--bg-elevated, var(--bg));
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px 16px 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.05);
+      transition: border-color .15s, transform .15s
+    }
+    .tm-post:hover { border-color: color-mix(in oklab, var(--accent) 35%, var(--border)) }
+    .tm-post-head {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 11px; color: var(--text-dim);
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px dashed var(--border)
+    }
+    .tm-post-author { font-weight: 700; color: var(--accent) }
+    .tm-post-time { opacity: .85 }
+    .tm-post-edited {
+      font-size: 10px; padding: 1px 6px; border-radius: 4px;
+      background: var(--border); color: var(--text-dim)
+    }
+    .tm-post-text { font-size: 14px; line-height: 1.7; word-break: break-word }
+    .tm-post-text a { color: var(--accent); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--accent) 50%, transparent) }
+    .tm-post-text a:hover { text-decoration-color: currentColor }
+    .tm-post-media {
+      margin-top: 10px;
+      display: grid; gap: 4px
+    }
+    /* Single photo: fill width, natural aspect, capped height. */
+    .tm-album-1 { grid-template-columns: 1fr }
+    .tm-album-1 .tm-photo img { max-height: 600px; object-fit: contain; background: #000 }
+    /* 2 photos side by side. */
+    .tm-album-2 { grid-template-columns: 1fr 1fr }
+    .tm-album-2 .tm-photo img { aspect-ratio: 1 / 1; object-fit: cover }
+    /* 3+ photos: 3-column album. */
+    .tm-album-3 { grid-template-columns: 1fr 1fr 1fr }
+    .tm-album-3 .tm-photo img { aspect-ratio: 1 / 1; object-fit: cover }
+
+    .tm-photo {
+      display: block; line-height: 0;
+      border-radius: 10px; overflow: hidden;
+      background: #000;
+      border: 1px solid var(--border)
+    }
+    .tm-photo img {
+      width: 100%; height: auto; display: block
+    }
+    .tm-vid {
+      position: relative; display: flex;
+      align-items: center; justify-content: center;
+      aspect-ratio: 16 / 9;
+      background-size: cover; background-position: center;
+      border-radius: 10px; background-color: var(--border);
+      color: #fff;
+      text-shadow: 0 0 6px rgba(0,0,0,.6);
+      border: 1px solid var(--border)
+    }
+    .tm-vid-play {
+      width: 54px; height: 54px;
+      border-radius: 50%; background: rgba(0,0,0,.5);
+      backdrop-filter: blur(4px);
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.4)
+    }
+    .tm-vid-dur {
+      position: absolute; bottom: 8px; right: 10px;
+      background: rgba(0,0,0,.65);
+      padding: 2px 7px; border-radius: 5px;
+      font-size: 11px
+    }
+    .tm-post-foot {
+      display: flex; gap: 14px;
+      margin-top: 8px;
+      font-size: 11px; color: var(--text-dim)
+    }
+    .tm-views { display: inline-flex; align-items: center; gap: 4px }
+    /* END telemirror */
+
     .media-action {
       display: flex;
       align-items: center;
@@ -2465,6 +2686,9 @@
         <div class="sidebar-toolbar">
           <button class="stb" id="scannerIconBtn" onclick="openScanner()" data-i18n="scanner_find_resolvers">Find Resolvers</button>
           <button class="stb" id="resolversSidebarBtn" onclick="openResolversModal()"><span data-i18n="sidebar_resolvers">Resolvers</span> <span class="stb-badge" id="resolversBadge" style="color:var(--error)">0</span></button>
+          <!-- BEGIN telemirror -->
+          <button class="stb" id="telemirrorSidebarBtn" onclick="openTelemirror()" data-i18n-title="telemirror_btn_title"><span data-i18n="telemirror_btn">Browse channels</span></button>
+          <!-- END telemirror -->
         </div>
         <input class="sidebar-search" id="channelSearch" type="text" data-i18n-ph="search" placeholder="Search..."
           oninput="filterChannels()">
@@ -2538,6 +2762,35 @@
 
   <!-- TOAST -->
   <div id="toast"></div>
+
+  <!-- BEGIN telemirror -->
+  <div id="telemirrorModal" class="tm-modal">
+    <header class="tm-topbar">
+      <button class="tm-back" onclick="closeTelemirror()" aria-label="Close">&#10094;</button>
+      <button class="tm-menu" onclick="toggleTmSidebar()" aria-label="Channels">&#9776;</button>
+      <div class="tm-topbar-info">
+        <div id="tmTopbarAvatar"></div>
+        <div class="tm-topbar-meta">
+          <div class="tm-topbar-name" id="tmTopbarName" data-i18n="telemirror_title">Browse channels</div>
+          <div class="tm-topbar-sub" id="tmTopbarSub"></div>
+        </div>
+      </div>
+    </header>
+    <div class="tm-body">
+      <aside id="tmSidebar" class="tm-sidebar">
+        <p class="tm-disclaimer" data-i18n="telemirror_disclaimer">Experimental backup feature for browsing public Telegram channels. Depends on third-party services and may stop working or be rate-limited. For reliable access, use the core thefeed feature.</p>
+        <div class="tm-add-row">
+          <input id="tmAddInput" type="text" data-i18n-ph="telemirror_add_ph" placeholder="@username" maxlength="40">
+          <button class="btn btn-primary" onclick="telemirrorAdd()" data-i18n="add">Add</button>
+        </div>
+        <div id="tmChannelsList" class="tm-channels-list"></div>
+      </aside>
+      <main id="tmContent" class="tm-content">
+        <div class="tm-empty" data-i18n="telemirror_pick_channel">Pick a channel</div>
+      </main>
+    </div>
+  </div>
+  <!-- END telemirror -->
 
   <!-- ===== SAVED RESOLVERS POPUP ===== -->
   <div class="modal-overlay" id="savedResolversModal">
@@ -3023,6 +3276,21 @@
         cancel_media_msg: 'دانلود این رسانه لغو شود؟', dismiss: 'بستن',
         write_message: 'پیام بنویسید...', configure_server: 'برای شروع یک سرور راه‌اندازی کنید',
         set_up: 'راه‌اندازی', switching: 'در حال تغییر پروفایل...', select_channel_hint: 'یک کانال را برای دیدن پیام‌ها انتخاب کنید',
+        // BEGIN telemirror
+        telemirror_btn: 'دیدن کانال‌های دلخواه',
+        telemirror_btn_title: 'دیدن کانال‌های دلخواه',
+        telemirror_title: 'دیدن کانال‌های دلخواه',
+        telemirror_disclaimer: 'روش باز کردن کانال‌های دلخواه در این بخش فقط تا زمانی که سرویس‌های گوگل باز باشن کار می‌کنه. اگر براتون کار نکرد، از قابلیت‌های اصلی thefeed استفاده کنید چون ضدفیلتر هستن.',
+        telemirror_add_ph: 'مثلا @VahidOnline',
+        telemirror_loading: 'در حال بارگذاری...',
+        telemirror_load_failed: 'دریافت کانال ناموفق بود.',
+        telemirror_no_posts: 'هیچ پستی پیدا نشد.',
+        telemirror_pick_channel: 'یک کانال را انتخاب کن',
+        telemirror_invalid_user: 'نام کاربری نامعتبر',
+        telemirror_remove_pinned: 'این کانال پیش‌فرض قابل حذف نیست',
+        telemirror_views: 'بازدید',
+        telemirror_edited: 'ویرایش شده',
+        // END telemirror
         font_size: 'اندازه قلم', debug_mode: 'حالت دیباگ', language: 'زبان',
         next_fetch_info: 'زمان باقی‌مانده تا دریافت بعدی محتوا توسط سرور',
         no_profiles: 'هنوز پروفایلی وجود ندارد', add_profile: '+ پروفایل جدید',
@@ -3233,6 +3501,21 @@
         cancel_media_msg: 'Cancel this download?', dismiss: 'Dismiss',
         write_message: 'Write a message...', configure_server: 'Configure a server to start reading',
         set_up: 'Set Up', switching: 'Switching profile...', select_channel_hint: 'Pick a channel to view its messages',
+        // BEGIN telemirror
+        telemirror_btn: 'Browse channels',
+        telemirror_btn_title: 'Browse channels',
+        telemirror_title: 'Browse channels',
+        telemirror_disclaimer: 'Browsing custom channels here only works while Google services are reachable. If it stops working for you, use thefeed\'s main features — those are filter-resistant.',
+        telemirror_add_ph: 'e.g. @VahidOnline',
+        telemirror_loading: 'Loading...',
+        telemirror_load_failed: 'Failed to load channel.',
+        telemirror_no_posts: 'No posts found.',
+        telemirror_pick_channel: 'Pick a channel',
+        telemirror_invalid_user: 'Invalid username',
+        telemirror_remove_pinned: 'Pinned channels cannot be removed',
+        telemirror_views: 'views',
+        telemirror_edited: 'edited',
+        // END telemirror
         font_size: 'Font Size', debug_mode: 'Debug mode', language: 'Language',
         next_fetch_info: 'Time until the server next fetches fresh channel content',
         no_profiles: 'No profiles yet', add_profile: '+ Add Profile',
@@ -7901,7 +8184,7 @@
       if (e.key === 'Enter' && document.activeElement === document.getElementById('sendInput')) { e.preventDefault(); sendMessage() }
       if (e.key === 'Enter' && document.activeElement === document.getElementById('peAddChannelInput')) { e.preventDefault(); addChannelEditor() }
       if (e.key === 'Enter' && document.activeElement === document.getElementById('msgSearchInput')) { e.preventDefault(); msgSearchNext() }
-      if (e.key === 'Escape') { closeSettings(); closeProfiles(); closeProfileEditor(); closeScanner(); closeMsgSearch(); closeExportModal(); closeResolversModal() }
+      if (e.key === 'Escape') { closeSettings(); closeProfiles(); closeProfileEditor(); closeScanner(); closeMsgSearch(); closeExportModal(); closeResolversModal(); closeTelemirror() }
     });
     mobileQuery.addEventListener('change', function () {
       var app = document.getElementById('app');
@@ -7979,6 +8262,9 @@
 
     init();
   </script>
+  <!-- BEGIN telemirror -->
+  <script src="/static/telemirror.js"></script>
+  <!-- END telemirror -->
 </body>
 
 </html>

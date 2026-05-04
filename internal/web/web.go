@@ -213,6 +213,9 @@ type Server struct {
 
 	// profilesMu serialises read-modify-write cycles on profiles.json.
 	profilesMu sync.Mutex
+
+	// Optional, removable backup feed (Telegram-via-Translate proxy).
+	telemirror *telemirrorHub
 }
 
 // New creates a new web server.
@@ -249,6 +252,7 @@ func New(dataDir string, port int, host string, password string) (*Server, error
 		mediaCache:     mediaCache,
 		dlProgress:     make(map[string]*mediaDLProgress),
 		relayInfo:      newRelayCache(),
+		telemirror:     newTelemirrorHub(dataDir),
 	}
 
 	if mediaCache != nil {
@@ -337,6 +341,10 @@ func (s *Server) Run() error {
 	// contract.
 	mux.HandleFunc("/api/media/get", s.handleMediaGet)
 	mux.HandleFunc("/api/media/progress", s.handleMediaProgress)
+	// Optional telemirror feature — see internal/telemirror/.
+	mux.HandleFunc("/api/telemirror/channels", s.telemirror.handleChannels)
+	mux.HandleFunc("/api/telemirror/channel/", s.telemirror.handleChannel)
+	mux.HandleFunc("/api/telemirror/img", s.telemirror.handleImg)
 	mux.HandleFunc("/", s.handleIndex)
 
 	// Listen on the specified host (default 127.0.0.1)
@@ -3573,6 +3581,9 @@ func (s *Server) handleClearCache(w http.ResponseWriter, r *http.Request) {
 				deleted++
 			}
 		}
+	}
+	if s.telemirror != nil {
+		s.telemirror.ClearCache()
 	}
 	mediaDeleted := 0
 	if s.mediaCache != nil {
