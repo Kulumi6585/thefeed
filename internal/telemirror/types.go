@@ -26,21 +26,30 @@ type Channel struct {
 
 // Media is one attachment on a post.
 type Media struct {
-	Type     string `json:"type"` // "photo" | "video"
+	Type     string `json:"type"` // "photo" | "video" | "voice" | "audio" | "document" | "sticker" | "poll"
 	URL      string `json:"url,omitempty"`
 	Thumb    string `json:"thumb,omitempty"`
 	Duration string `json:"duration,omitempty"`
+	Title    string `json:"title,omitempty"` // file name / poll question / audio title
+	Subtitle string `json:"subtitle,omitempty"`
+}
+
+// Reaction is one emoji + count on a post.
+type Reaction struct {
+	Emoji string `json:"emoji"`
+	Count string `json:"count,omitempty"`
 }
 
 // Post is a single message from the channel feed.
 type Post struct {
-	ID     string    `json:"id"` // "<channel>/<msgid>"
-	Author string    `json:"author,omitempty"`
-	Text   string    `json:"text,omitempty"` // sanitised inner HTML
-	Media  []Media   `json:"media,omitempty"`
-	Time   time.Time `json:"time,omitempty"`
-	Views  string    `json:"views,omitempty"`
-	Edited bool      `json:"edited,omitempty"`
+	ID        string     `json:"id"` // "<channel>/<msgid>"
+	Author    string     `json:"author,omitempty"`
+	Text      string     `json:"text,omitempty"` // sanitised inner HTML
+	Media     []Media    `json:"media,omitempty"`
+	Reactions []Reaction `json:"reactions,omitempty"`
+	Time      time.Time  `json:"time,omitempty"`
+	Views     string     `json:"views,omitempty"`
+	Edited    bool       `json:"edited,omitempty"`
 }
 
 // FetchResult is what we cache per channel.

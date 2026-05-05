@@ -931,6 +931,17 @@
     }
 
     /* BEGIN telemirror */
+    /* Sidebar trigger — small "↗" icon signals leaving the main flow.
+       inline-flex would override .stb's text-align:center, so use
+       inline-block and inline-block the icon alongside the text. */
+    .tm-sidebar-btn-ext {
+      display: inline-block;
+      margin-inline-start: 4px;
+      font-size: 11px; opacity: .65; line-height: 1;
+      vertical-align: baseline
+    }
+    .tm-sidebar-btn:hover .tm-sidebar-btn-ext { opacity: 1 }
+
     .tm-no-scroll { overflow: hidden }
     .tm-modal {
       position: fixed; inset: 0; z-index: 9000;
@@ -955,8 +966,8 @@
       transition: background .12s, border-color .12s
     }
     .tm-back:hover, .tm-menu:hover { background: var(--border); border-color: var(--border) }
+    /* .tm-menu visibility handled inside the same @media block as the sidebar drawer (below). */
     .tm-menu { display: none }
-    @media (max-width: 768px) { .tm-menu { display: inline-flex } }
 
     .tm-topbar-info { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0 }
     .tm-topbar-meta { min-width: 0; flex: 1 }
@@ -989,13 +1000,41 @@
       background: var(--bg-elevated, var(--bg));
       display: flex; flex-direction: column; min-height: 0
     }
-    @media (max-width: 768px) {
+    /* Backdrop sits between the sidebar (z:2) and the content. In mobile
+       drawer mode it lights up when .tm-sidebar.open is set so tapping
+       outside the drawer dismisses it. */
+    .tm-backdrop { display: none }
+
+    /* Mobile drawer. The hamburger menu also shows up here, plus on
+       touch devices up to 1024px so phones in landscape and tablets
+       in portrait still get the drawer treatment. */
+    @media (max-width: 768px), (pointer: coarse) and (max-width: 1024px) {
+      .tm-menu { display: inline-flex }
       .tm-sidebar {
-        position: absolute; top: 0; bottom: 0; left: 0; width: 86%; max-width: 340px;
-        z-index: 2; transform: translateX(-100%); transition: transform .22s ease;
-        box-shadow: 4px 0 24px rgba(0,0,0,.0)
+        position: absolute; top: 0; bottom: 0;
+        width: 86%; max-width: 340px;
+        z-index: 2; transition: transform .22s ease;
+        box-shadow: 0 0 0 rgba(0,0,0,.0)
       }
-      .tm-sidebar.open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,.32) }
+      /* LTR: slide in from the left. */
+      html[dir="ltr"] .tm-sidebar { left: 0; right: auto; transform: translateX(-100%) }
+      html[dir="ltr"] .tm-sidebar.open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,.32) }
+      /* RTL: slide in from the right (where the channel list belongs). */
+      html[dir="rtl"] .tm-sidebar { right: 0; left: auto; transform: translateX(100%) }
+      html[dir="rtl"] .tm-sidebar.open { transform: translateX(0); box-shadow: -4px 0 24px rgba(0,0,0,.32) }
+
+      .tm-backdrop {
+        display: block;
+        position: absolute; inset: 0;
+        background: rgba(0,0,0,0);
+        pointer-events: none;
+        transition: background .22s ease;
+        z-index: 1
+      }
+      .tm-sidebar.open ~ .tm-backdrop {
+        background: rgba(0,0,0,.42);
+        pointer-events: auto
+      }
     }
     .tm-disclaimer {
       padding: 12px 14px; margin: 10px;
@@ -1060,15 +1099,29 @@
       text-align: center; color: var(--text-dim); font-size: 13px
     }
 
-    .tm-channel-desc {
-      max-width: 720px; width: 100%; margin: 0 auto 4px;
-      padding: 12px 16px; font-size: 13px; color: var(--text-dim);
-      line-height: 1.7;
-      background: var(--bg-elevated, var(--bg));
-      border: 1px solid var(--border); border-radius: 12px;
-      box-shadow: 0 1px 3px rgba(0,0,0,.04)
+    /* Channel bio — clearly distinct from posts: dashed border, label header, accent left edge. */
+    .tm-channel-bio {
+      max-width: 720px; width: 100%; margin: 0 auto 8px;
+      background: color-mix(in oklab, var(--accent) 5%, transparent);
+      border: 1px dashed color-mix(in oklab, var(--accent) 50%, var(--border));
+      border-radius: 12px;
+      overflow: hidden
     }
-    .tm-channel-desc a { color: var(--accent) }
+    .tm-channel-bio-label {
+      padding: 8px 14px;
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .04em;
+      color: var(--accent);
+      background: color-mix(in oklab, var(--accent) 10%, transparent);
+      border-bottom: 1px dashed color-mix(in oklab, var(--accent) 35%, var(--border))
+    }
+    .tm-channel-bio-body {
+      padding: 12px 14px;
+      font-size: 13px; line-height: 1.75;
+      color: var(--text-dim);
+      overflow-wrap: anywhere; word-break: break-word
+    }
+    .tm-channel-bio-body a { color: var(--accent) }
 
     .tm-post {
       max-width: 720px; width: 100%; margin: 0 auto;
@@ -1093,8 +1146,20 @@
       font-size: 10px; padding: 1px 6px; border-radius: 4px;
       background: var(--border); color: var(--text-dim)
     }
-    .tm-post-text { font-size: 14px; line-height: 1.7; word-break: break-word }
-    .tm-post-text a { color: var(--accent); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--accent) 50%, transparent) }
+    .tm-post-text {
+      font-size: 14px; line-height: 1.7;
+      overflow-wrap: anywhere;          /* break long URLs / unbroken strings */
+      word-break: break-word
+    }
+    .tm-post-text pre, .tm-post-text code {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere
+    }
+    .tm-post-text a {
+      color: var(--accent); text-decoration: underline;
+      text-decoration-color: color-mix(in oklab, var(--accent) 50%, transparent);
+      overflow-wrap: anywhere
+    }
     .tm-post-text a:hover { text-decoration-color: currentColor }
     .tm-post-media {
       margin-top: 10px;
@@ -1111,6 +1176,7 @@
     .tm-album-3 .tm-photo img { aspect-ratio: 1 / 1; object-fit: cover }
 
     .tm-photo {
+      position: relative;
       display: block; line-height: 0;
       border-radius: 10px; overflow: hidden;
       background: #000;
@@ -1118,6 +1184,22 @@
     }
     .tm-photo img {
       width: 100%; height: auto; display: block
+    }
+    /* Download badge — fades in on hover; always visible on touch screens. */
+    .tm-photo-dl {
+      position: absolute; bottom: 8px; inset-inline-end: 8px;
+      width: 32px; height: 32px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,.65); color: #fff;
+      border-radius: 50%;
+      font-size: 16px; text-decoration: none;
+      opacity: 0; transition: opacity .15s, background .15s;
+      backdrop-filter: blur(2px)
+    }
+    .tm-photo:hover .tm-photo-dl { opacity: 1 }
+    .tm-photo-dl:hover { background: rgba(0,0,0,.85) }
+    @media (hover: none) {
+      .tm-photo-dl { opacity: .85 }
     }
     .tm-vid {
       position: relative; display: flex;
@@ -1144,11 +1226,110 @@
       font-size: 11px
     }
     .tm-post-foot {
-      display: flex; gap: 14px;
-      margin-top: 8px;
+      display: flex; align-items: center; gap: 14px;
+      margin-top: 10px;
+      padding-top: 6px;
+      border-top: 1px dashed var(--border);
       font-size: 11px; color: var(--text-dim)
     }
     .tm-views { display: inline-flex; align-items: center; gap: 4px }
+    /* Time at the end of the foot (i18n-friendly with start-end). */
+    .tm-post-foot .tm-post-time { margin-inline-start: auto }
+
+    /* Topbar refresh button */
+    .tm-refresh {
+      background: none; border: 1px solid transparent; color: var(--text);
+      font-size: 18px; cursor: pointer; padding: 6px 10px; border-radius: 8px;
+      transition: background .12s, border-color .12s, transform .15s
+    }
+    .tm-refresh:hover { background: var(--border); border-color: var(--border) }
+    .tm-refresh:active { transform: rotate(45deg) }
+
+    /* Copy button — text label, sits at the end of post-head. */
+    .tm-post-copy {
+      margin-inline-start: auto;
+      background: none; border: 1px solid var(--border);
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 6px;
+      transition: background .12s, color .12s, border-color .12s
+    }
+    .tm-post-copy:hover { background: var(--border); color: var(--text); border-color: var(--accent) }
+    .tm-post-copy.tm-copied { color: var(--accent); border-color: var(--accent); background: color-mix(in oklab, var(--accent) 10%, transparent) }
+
+    /* Generic media tile (voice, audio, document, poll). */
+    .tm-media-tile {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      min-width: 0
+    }
+    .tm-media-icon {
+      flex-shrink: 0;
+      width: 40px; height: 40px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 50%;
+      background: color-mix(in oklab, var(--accent) 18%, transparent);
+      font-size: 18px
+    }
+    .tm-media-meta { flex: 1; min-width: 0 }
+    .tm-media-title {
+      font-size: 13px; font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis
+    }
+    .tm-media-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px }
+
+    /* Sticker — small inline image, no border. */
+    .tm-sticker {
+      max-width: 200px; line-height: 0
+    }
+    .tm-sticker img {
+      max-width: 100%; max-height: 200px; display: block; background: transparent
+    }
+
+    /* Reactions row — pills of emoji + count. */
+    .tm-post-reactions {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      margin-top: 10px
+    }
+    .tm-reaction {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 9px;
+      background: color-mix(in oklab, var(--accent) 10%, transparent);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 12px
+    }
+    .tm-reaction-emoji { font-size: 14px; line-height: 1 }
+    .tm-reaction-count { color: var(--text-dim); font-weight: 600 }
+
+    /* If our image proxy fails, collapse the wrapper so we don't show
+       a permanent broken-image icon. */
+    .tm-photo-failed { display: none }
+
+    /* First-visit hint — points the user at the channel list. */
+    .tm-first-hint {
+      margin: auto;
+      padding: 28px 24px;
+      max-width: 420px;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 14px;
+      line-height: 1.7;
+      background: var(--bg-elevated, var(--bg));
+      border: 1px dashed var(--border);
+      border-radius: 14px
+    }
+    .tm-first-hint-arrow {
+      font-size: 32px; line-height: 1;
+      color: var(--accent);
+      margin-bottom: 10px
+    }
+    .tm-first-hint-text { white-space: pre-line }
     /* END telemirror */
 
     .media-action {
@@ -2687,7 +2868,7 @@
           <button class="stb" id="scannerIconBtn" onclick="openScanner()" data-i18n="scanner_find_resolvers">Find Resolvers</button>
           <button class="stb" id="resolversSidebarBtn" onclick="openResolversModal()"><span data-i18n="sidebar_resolvers">Resolvers</span> <span class="stb-badge" id="resolversBadge" style="color:var(--error)">0</span></button>
           <!-- BEGIN telemirror -->
-          <button class="stb" id="telemirrorSidebarBtn" onclick="openTelemirror()" data-i18n-title="telemirror_btn_title"><span data-i18n="telemirror_btn">Browse channels</span></button>
+          <button class="stb tm-sidebar-btn" id="telemirrorSidebarBtn" onclick="openTelemirror()" data-i18n-title="telemirror_btn_title"><span data-i18n="telemirror_btn">Browse channels</span><span class="tm-sidebar-btn-ext" aria-hidden="true">&#8599;</span></button>
           <!-- END telemirror -->
         </div>
         <input class="sidebar-search" id="channelSearch" type="text" data-i18n-ph="search" placeholder="Search..."
@@ -2775,6 +2956,7 @@
           <div class="tm-topbar-sub" id="tmTopbarSub"></div>
         </div>
       </div>
+      <button class="tm-refresh" onclick="tmRefreshActive()" title="Refresh" data-i18n-title="telemirror_refresh">&#8635;</button>
     </header>
     <div class="tm-body">
       <aside id="tmSidebar" class="tm-sidebar">
@@ -2785,6 +2967,7 @@
         </div>
         <div id="tmChannelsList" class="tm-channels-list"></div>
       </aside>
+      <div class="tm-backdrop" onclick="toggleTmSidebar()" aria-hidden="true"></div>
       <main id="tmContent" class="tm-content">
         <div class="tm-empty" data-i18n="telemirror_pick_channel">Pick a channel</div>
       </main>
@@ -3290,6 +3473,18 @@
         telemirror_remove_pinned: 'این کانال پیش‌فرض قابل حذف نیست',
         telemirror_views: 'بازدید',
         telemirror_edited: 'ویرایش شده',
+        telemirror_first_hint: 'یک کانال از لیست انتخاب کن، یا با ورودی بالا کانال جدیدی اضافه کن.',
+        telemirror_first_hint_mobile: 'برای دیدن لیست کانال‌ها، دکمه‌ی منو در بالای صفحه را بزن. سپس یک کانال انتخاب یا اضافه کن.',
+        telemirror_refresh: 'به‌روز کردن',
+        telemirror_refresh_warn: 'این کانال {n} ثانیه پیش به‌روز شد. به‌روزرسانی مکرر ممکنه به محدودیت تعداد درخواست بخوره و چند دقیقه قابل استفاده نباشه. ادامه می‌دی؟',
+        telemirror_refresh_yes: 'به‌روز کن',
+        telemirror_voice: 'پیام صوتی',
+        telemirror_audio: 'فایل صوتی',
+        telemirror_file: 'فایل',
+        telemirror_poll: 'نظرسنجی',
+        telemirror_about: 'درباره‌ی این کانال',
+        download: 'دانلود',
+        copy: 'کپی',
         // END telemirror
         font_size: 'اندازه قلم', debug_mode: 'حالت دیباگ', language: 'زبان',
         next_fetch_info: 'زمان باقی‌مانده تا دریافت بعدی محتوا توسط سرور',
@@ -3515,6 +3710,18 @@
         telemirror_remove_pinned: 'Pinned channels cannot be removed',
         telemirror_views: 'views',
         telemirror_edited: 'edited',
+        telemirror_first_hint: 'Pick a channel from the list, or add a new one with the input above.',
+        telemirror_first_hint_mobile: 'Tap the menu button at the top to open the channel list, then pick or add a channel.',
+        telemirror_refresh: 'Refresh',
+        telemirror_refresh_warn: 'This channel was refreshed {n} sec ago. Refreshing too often can hit a rate limit and stop working for a few minutes. Refresh anyway?',
+        telemirror_refresh_yes: 'Refresh',
+        telemirror_voice: 'Voice message',
+        telemirror_audio: 'Audio',
+        telemirror_file: 'File',
+        telemirror_poll: 'Poll',
+        telemirror_about: 'About this channel',
+        download: 'Download',
+        copy: 'Copy',
         // END telemirror
         font_size: 'Font Size', debug_mode: 'Debug mode', language: 'Language',
         next_fetch_info: 'Time until the server next fetches fresh channel content',

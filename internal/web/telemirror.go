@@ -142,21 +142,58 @@ func rewriteImageURLs(in *telemirror.FetchResult) *telemirror.FetchResult {
 	return &cp
 }
 
+// proxyImgURL routes an image URL through our /api/telemirror/img
+// endpoint, applying the translate.goog hostname rewrite when the
+// source is a Telegram CDN. Google's Translate proxy doesn't rewrite
+// inline background-image URLs, so the parser hands us the original
+// cdn4.telegram.org / cdn4.telesco.pe URLs and we have to translate
+// them ourselves before fetching through fronting.
 func proxyImgURL(raw string) string {
-	if raw == "" || !strings.HasPrefix(raw, "https://") {
+	rewritten := translateGoogify(raw)
+	if rewritten == "" {
 		return raw
 	}
-	// Only rewrite hosts we'll actually proxy — anything else passes
-	// through so the browser can load it directly.
-	if !isProxiableHost(raw) {
-		return raw
-	}
-	return "/api/telemirror/img?u=" + url.QueryEscape(raw)
+	return "/api/telemirror/img?u=" + url.QueryEscape(rewritten)
 }
 
-// isProxiableHost — only translate.goog. Other CDNs (cdn*.telesco.pe,
-// cdn*.telegram.org) can't be proxied because Google's edge only routes
-// to its own backends, not arbitrary external hosts.
+// translateGoogify maps a CDN URL to its Google-Translate-proxied form.
+// Returns "" if the URL is something we shouldn't proxy at all.
+//
+// Examples:
+//
+//	https://cdn4.telegram.org/file/abc.jpg
+//	  → https://cdn4-telegram-org.translate.goog/file/abc.jpg
+//	https://cdn1.telesco.pe/file/x.jpg
+//	  → https://cdn1-telesco-pe.translate.goog/file/x.jpg
+//	https://cdn4-telegram-org.translate.goog/file/abc.jpg
+//	  → unchanged (already on translate.goog)
+func translateGoogify(raw string) string {
+	if raw == "" || !strings.HasPrefix(raw, "https://") {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	host := strings.ToLower(u.Host)
+	switch {
+	case strings.HasSuffix(host, ".translate.goog"):
+		// Already on translate.goog — proxy directly.
+		return raw
+	case strings.HasSuffix(host, ".telegram.org"),
+		strings.HasSuffix(host, ".telesco.pe"),
+		host == "t.me":
+		// Replace every "." with "-" and append ".translate.goog".
+		// Same scheme Google's proxy uses.
+		u.Host = strings.ReplaceAll(host, ".", "-") + ".translate.goog"
+		return u.String()
+	}
+	return ""
+}
+
+// isProxiableHost — only the translate.goog form. Used by the /api/telemirror/img
+// handler to validate the `u` query parameter, after the JSON
+// rewrite has converted Telegram CDN URLs to their .translate.goog equivalent.
 func isProxiableHost(rawURL string) bool {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -189,12 +226,19 @@ func (h *telemirrorHub) handleImg(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 502)
 		return
 	}
+	// If the upstream returned HTML or some non-image content (a Google
+	// error page, captcha, etc.), surface a 502 instead of relaying it.
+	// The browser fires onerror reliably on a 502, so the avatar / image
+	// fallback in the JS kicks in cleanly.
+	low := strings.ToLower(ctype)
+	if !strings.HasPrefix(low, "image/") && !strings.HasPrefix(low, "video/") && !strings.HasPrefix(low, "audio/") && low != "" {
+		http.Error(w, "upstream not an image: "+ctype, 502)
+		return
+	}
 	if ctype == "" {
 		ctype = "application/octet-stream"
 	}
 	w.Header().Set("Content-Type", ctype)
-	// Browser cache for an hour — these URLs are content-addressed so
-	// any change shows up as a different URL anyway.
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(body)))
 	_, _ = w.Write(body)

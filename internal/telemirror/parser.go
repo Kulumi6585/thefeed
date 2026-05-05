@@ -94,8 +94,79 @@ func parseSinglePost(wrap *html.Node) *Post {
 				m.Duration = textOf(d)
 			}
 			p.Media = append(p.Media, m)
+		case hasClass(n, "tgme_widget_message_voice"), hasClass(n, "tgme_widget_message_voice_player"):
+			m := Media{Type: "voice"}
+			if d := findFirstByClass(n, "tgme_widget_message_voice_duration"); d != nil {
+				m.Duration = textOf(d)
+			}
+			p.Media = append(p.Media, m)
+		case hasClass(n, "tgme_widget_message_audio"), hasClass(n, "tgme_widget_message_audio_player"):
+			m := Media{Type: "audio"}
+			if d := findFirstByClass(n, "tgme_widget_message_audio_duration"); d != nil {
+				m.Duration = textOf(d)
+			}
+			if t := findFirstByClass(n, "tgme_widget_message_audio_title"); t != nil {
+				m.Title = textOf(t)
+			}
+			if a := findFirstByClass(n, "tgme_widget_message_audio_performer"); a != nil {
+				m.Subtitle = textOf(a)
+			}
+			p.Media = append(p.Media, m)
+		case hasClass(n, "tgme_widget_message_document_wrap"), hasClass(n, "tgme_widget_message_document"):
+			m := Media{Type: "document"}
+			if t := findFirstByClass(n, "tgme_widget_message_document_title"); t != nil {
+				m.Title = textOf(t)
+			}
+			if e := findFirstByClass(n, "tgme_widget_message_document_extra"); e != nil {
+				m.Subtitle = textOf(e)
+			}
+			p.Media = append(p.Media, m)
+		case hasClass(n, "tgme_widget_message_sticker_wrap"), hasClass(n, "tgme_widget_message_sticker"):
+			m := Media{Type: "sticker"}
+			if img := findFirstByTag(n, "img"); img != nil {
+				m.Thumb = attrOf(img, "src")
+			}
+			if m.Thumb == "" {
+				m.Thumb = extractBgImage(attrOf(n, "style"))
+			}
+			p.Media = append(p.Media, m)
+		case hasClass(n, "tgme_widget_message_poll"):
+			m := Media{Type: "poll"}
+			if q := findFirstByClass(n, "tgme_widget_message_poll_question"); q != nil {
+				m.Title = textOf(q)
+			}
+			if t := findFirstByClass(n, "tgme_widget_message_poll_type"); t != nil {
+				m.Subtitle = textOf(t)
+			}
+			p.Media = append(p.Media, m)
 		}
 		return true
+	})
+
+	// Reactions: each .tgme_reaction holds an emoji + a count.
+	visit(msg, func(n *html.Node) bool {
+		if !hasClass(n, "tgme_reaction") {
+			return true
+		}
+		emoji := ""
+		if e := findFirstByClass(n, "emoji"); e != nil {
+			if b := findFirstByTag(e, "b"); b != nil {
+				emoji = textOf(b)
+			} else {
+				emoji = textOf(e)
+			}
+		}
+		// Fallback: take any <b> directly inside.
+		if emoji == "" {
+			if b := findFirstByTag(n, "b"); b != nil {
+				emoji = textOf(b)
+			}
+		}
+		count := strings.TrimSpace(strings.TrimPrefix(textOf(n), emoji))
+		if emoji != "" || count != "" {
+			p.Reactions = append(p.Reactions, Reaction{Emoji: emoji, Count: count})
+		}
+		return false // don't recurse inside a reaction
 	})
 
 	if dateEl := findFirstByClass(msg, "tgme_widget_message_date"); dateEl != nil {

@@ -117,7 +117,6 @@ var userAgents = []string{
 	"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
 }
 
-
 // Client mirrors HttpClient from teleMirror's http-client.js.
 type Client struct {
 	rateMu      sync.Mutex
@@ -445,7 +444,7 @@ func (c *Client) FetchURL(ctx context.Context, rawURL string) ([]byte, string, e
 			select {
 			case <-ctx.Done():
 				return nil, "", ctx.Err()
-			case <-time.After(300 * time.Millisecond):
+			case <-time.After(200 * time.Millisecond):
 			}
 		}
 		body, ctype, status, err := c.fetchOnce(ctx, ap, rawURL, hostHeader)
