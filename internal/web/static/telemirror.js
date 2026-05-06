@@ -67,17 +67,33 @@
     var disp = name || username || '';
     var initial = '<span class="tm-avatar-initial">' + tmEsc(tmInitial(disp)) + '</span>';
     var bg = tmAvatarColor(disp || '?');
-    var photo = tmAvatarCache[(username || '').toLowerCase()];
+    var key = (username || '').toLowerCase();
+    var photo = tmAvatarCache[key];
     var inner = initial;
     if (photo) {
-      // Img falls back to the initial-letter span on load failure.
+      // onerror also purges the cache entry — without that, every
+      // render loops on the same broken URL until the user picks the
+      // channel again and tmSelect overwrites it.
       inner = '<img src="' + tmEscAttr(photo) + '" loading="lazy" alt=""'
-        + ' onerror="this.parentNode.classList.add(\'tm-avatar-fallback\');this.remove()">'
+        + ' onerror="tmAvatarLoadFailed(this, \'' + tmEscAttr(key) + '\')">'
         + initial;
     }
     return '<div class="tm-avatar" style="width:' + size + 'px;height:' + size + 'px;background:' + bg + '">'
       + inner + '</div>';
   }
+
+  // tmAvatarLoadFailed: drop the stale URL, swap the parent into
+  // initial-letter mode, and remove the broken <img>.
+  window.tmAvatarLoadFailed = function (img, key) {
+    if (key && tmAvatarCache[key]) {
+      delete tmAvatarCache[key];
+      tmSaveAvatars();
+    }
+    if (img && img.parentNode) {
+      img.parentNode.classList.add('tm-avatar-fallback');
+      img.remove();
+    }
+  };
 
   // ===== open / close =====
   // Track whether we pushed a history entry on open, so close() can

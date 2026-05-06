@@ -361,6 +361,25 @@ func TestParseHTMLRewritesPostLinks(t *testing.T) {
 	}
 }
 
+// Google Translate sometimes injects toolbar / language-picker images
+// inside the channel header. The avatar parser must skip those and
+// pick the real one in `.tgme_page_photo_image` regardless of order.
+func TestParseHTMLAvatarPicksRealImg(t *testing.T) {
+	const sample = `<!DOCTYPE html><html><body>
+<div class="tgme_channel_info_header">
+  <img src="https://translate.google.com/static/icon.svg" alt="Translate">
+  <i class="tgme_page_photo_image"><img src="https://cdn4-telegram-org.translate.goog/file/real-avatar.jpg"></i>
+</div>
+</body></html>`
+	ch, _, err := ParseHTML(sample)
+	if err != nil {
+		t.Fatalf("ParseHTML: %v", err)
+	}
+	if !strings.Contains(ch.Photo, "real-avatar.jpg") {
+		t.Errorf("ch.Photo = %q, want the real avatar URL", ch.Photo)
+	}
+}
+
 func TestParseHTMLEmpty(t *testing.T) {
 	ch, posts, err := ParseHTML("<html></html>")
 	if err != nil {

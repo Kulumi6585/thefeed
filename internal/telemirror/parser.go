@@ -39,9 +39,23 @@ func parseChannelInfo(doc *html.Node) *Channel {
 	if descEl := findFirstByClass(doc, "tgme_channel_info_description"); descEl != nil {
 		ch.Description = rewriteTranslateLinksInHTML(innerHTML(descEl))
 	}
-	if header := findFirstByClass(doc, "tgme_channel_info_header"); header != nil {
-		if img := findFirstByTag(header, "img"); img != nil {
+	// Telegram wraps the avatar in `tgme_page_photo_image`. Look for
+	// that specifically — Google Translate's proxy may inject other
+	// imagery in the header, so picking the first <img> grabs the
+	// wrong one.
+	if photoEl := findFirstByClass(doc, "tgme_page_photo_image"); photoEl != nil {
+		if img := findFirstByTag(photoEl, "img"); img != nil {
 			ch.Photo = attrOf(img, "src")
+		} else if src := attrOf(photoEl, "src"); src != "" {
+			ch.Photo = src
+		}
+	}
+	// Fallback: first <img> in the header (older Telegram layouts).
+	if ch.Photo == "" {
+		if header := findFirstByClass(doc, "tgme_channel_info_header"); header != nil {
+			if img := findFirstByTag(header, "img"); img != nil {
+				ch.Photo = attrOf(img, "src")
+			}
 		}
 	}
 	if cnt := findFirstByClass(doc, "tgme_channel_info_counter"); cnt != nil {
