@@ -2940,6 +2940,51 @@
 </head>
 
 <body>
+
+  <!-- First-launch language picker. Visible until lang is set; pure HTML/JS
+       so it works on iOS, Android, and the browser without native code. -->
+  <div id="firstRunLangModal" style="display:none;position:fixed;inset:0;z-index:99999;background:#0f1722;color:#fff;align-items:center;justify-content:center;flex-direction:column;padding:24px;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif">
+    <div style="font-size:38px;font-weight:700;margin-bottom:6px;letter-spacing:-0.5px">TheFeed</div>
+    <div style="opacity:.6;font-size:14px;margin-bottom:36px;text-align:center">Choose your language &nbsp;·&nbsp; زبان خود را انتخاب کنید</div>
+    <div style="display:flex;flex-direction:column;gap:14px;width:100%;max-width:320px">
+      <button onclick="firstRunPickLang('en')" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;border-radius:14px;padding:18px;font-size:18px;font-weight:600;cursor:pointer">English<div style="font-size:12px;font-weight:400;opacity:.7;margin-top:2px">Continue in English</div></button>
+      <button onclick="firstRunPickLang('fa')" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;border-radius:14px;padding:18px;font-size:18px;font-weight:600;cursor:pointer">فارسی<div style="font-size:12px;font-weight:400;opacity:.7;margin-top:2px">ادامه به زبان فارسی</div></button>
+    </div>
+  </div>
+  <script>
+    (function () {
+      // Server is the source of truth: wiping thefeeddata/ resets lang
+      // along with everything else. Sync XHR keeps this decision before
+      // first paint so the modal never flashes for returning users.
+      var lang = '';
+      try {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '/api/settings', false);
+        xhr.send();
+        if (xhr.status === 200) lang = (JSON.parse(xhr.responseText).lang || '');
+      } catch (e) {
+        // Server unreachable — fall back to client-side caches.
+        try { if (typeof IOS !== 'undefined' && IOS.getLang) lang = IOS.getLang() || ''; } catch (e2) { }
+        try { if (!lang && typeof Android !== 'undefined' && Android.getLang) lang = Android.getLang() || ''; } catch (e2) { }
+        if (!lang) lang = localStorage.getItem('thefeed_lang') || '';
+      }
+      if (!lang) document.getElementById('firstRunLangModal').style.display = 'flex';
+    })();
+    function firstRunPickLang(l) {
+      // Persist server-side synchronously so the reload sees it.
+      try {
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/settings', false);
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.send(JSON.stringify({ lang: l }));
+      } catch (e) { }
+      try { localStorage.setItem('thefeed_lang', l); } catch (e) { }
+      try { if (typeof IOS !== 'undefined' && IOS.setLang) IOS.setLang(l); } catch (e) { }
+      try { if (typeof Android !== 'undefined' && Android.setLang) Android.setLang(l); } catch (e) { }
+      location.reload();
+    }
+  </script>
+
   <div class="app" id="app">
 
     <!-- SIDEBAR -->
@@ -4043,9 +4088,21 @@
     // native value first survives an embedded server rebinding to a
     // new loopback port on each launch.
     var lang = (function () {
+      // Same precedence as the modal-init script: server first (so a
+      // wiped thefeeddata/ also wipes the language), then native bridge,
+      // then localStorage as a final cache.
+      try {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '/api/settings', false);
+        xhr.send();
+        if (xhr.status === 200) {
+          var d = JSON.parse(xhr.responseText);
+          if (d.lang) return d.lang;
+        }
+      } catch (e) { }
       try { if (typeof IOS !== 'undefined' && IOS.getLang) { var v = IOS.getLang(); if (v) return v; } } catch (e) { }
       try { if (typeof Android !== 'undefined' && Android.getLang) { var v2 = Android.getLang(); if (v2) return v2; } } catch (e) { }
-      return localStorage.getItem('thefeed_lang') || 'fa';
+      return localStorage.getItem('thefeed_lang') || '';
     })();
     function t(k) { return (I18N[lang] && I18N[lang][k]) || I18N.en[k] || k }
     function applyLang() {
@@ -4055,8 +4112,8 @@
       document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.dataset.i18n) });
       document.querySelectorAll('[data-i18n-ph]').forEach(function (el) { el.placeholder = t(el.dataset.i18nPh) });
       document.querySelectorAll('[data-i18n-title]').forEach(function (el) { el.title = t(el.dataset.i18nTitle) });
-      document.getElementById('langFa').classList.toggle('active-lang', lang === 'fa');
-      document.getElementById('langEn').classList.toggle('active-lang', lang === 'en');
+      var lf = document.getElementById('langFa'); if (lf) lf.classList.toggle('active-lang', lang === 'fa');
+      var le = document.getElementById('langEn'); if (le) le.classList.toggle('active-lang', lang === 'en');
       document.getElementById('sendInput').style.direction = isRtl ? 'rtl' : 'ltr';
       applyThemeButtons();
       // Re-render dynamic content
@@ -5351,9 +5408,15 @@
       // pre-named profile instead of "thefeed.example.com" pulled
       // from the domain. Capped at 32 chars on this side; the
       // import side enforces the same cap defensively.
+      // Drop the default ":53" suffix from each resolver — the parser
+      // assumes 53 when no port is given, so omitting it shortens the
+      // URI considerably. Custom ports are kept and stay un-encoded.
+      var compact = resolvers.map(function (r) {
+        return r.replace(/:53$/, '');
+      }).join(',');
       var uri = 'thefeed://' + encodeURIComponent(p.config.domain)
         + '/' + encodeURIComponent(p.config.key)
-        + '?r=' + encodeURIComponent(resolvers.join(','));
+        + '?r=' + encodeURIComponent(compact).replace(/%3A/g, ':');
       var nick = (p.nickname || '').trim().slice(0, 32);
       if (nick && nick !== p.config.domain) {
         uri += '&n=' + encodeURIComponent(nick);

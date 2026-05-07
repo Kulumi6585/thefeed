@@ -61,11 +61,10 @@ struct WebView: UIViewRepresentable {
         """
     }
 
-    /// Reads the language picked at first launch. Falls back to "en"
-    /// for the brief window before the picker has been answered.
+    /// Returns the saved language ("" on first launch) so the WebView's
+    /// own language picker can detect first-launch and show its modal.
     private func resolveLang() -> String {
-        let saved = UserDefaults.standard.string(forKey: "tf.lang") ?? ""
-        return saved.isEmpty ? "en" : saved
+        return UserDefaults.standard.string(forKey: "tf.lang") ?? ""
     }
 
     func updateUIView(_ view: WKWebView, context: Context) {
