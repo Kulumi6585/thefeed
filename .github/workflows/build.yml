@@ -2,7 +2,9 @@ name: Build
 
 on:
   push:
-    tags: ['v*']
+    tags:
+      - 'v*'
+      - '!v*-ios*'   # iOS-only tags are handled by ios-release.yml
 
 permissions:
   contents: write

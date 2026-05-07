@@ -8,7 +8,9 @@ on:
         required: true
         default: 'v0.0.0-ios.0'
   push:
-    tags: ['v*-ios.*']
+    tags:
+      - 'v*-ios.*'
+      - 'v*-ios-*'
 
 permissions:
   contents: write
