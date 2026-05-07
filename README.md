@@ -504,7 +504,7 @@ The browser-based UI has:
 The web UI includes a built-in resolver scanner (🔍 icon in sidebar) that probes IP ranges to discover DNS servers capable of reaching your thefeed server. Features:
 
 - **Flexible targets**: enter individual IPs, CIDRs (e.g. `5.1.0.0/16`), or domain names — one per line
-- **Iran CIDRs preset**: one-click button to load a curated list of Iranian ISP ranges
+- **Default CIDR preset**: one-click button to load the bundled curated CIDR range list
 - **Clear targets**: button to quickly clear the scanner CIDR/IP list
 - **Profile-aware**: select which profile's domain and passphrase to use for probing
 - **Configurable**: set concurrency (default 50), timeout (default 15s), and max IPs to scan
@@ -662,7 +662,7 @@ MIT
 
 <div align="center">
 
-**For FREE IRAN** <img src="internal/web/static/iran-lion-sun.svg" alt="Lion-and-Sun" height="20">
+**For FREE IRAN** <img src="internal/web/static/lion-sun.svg" alt="Lion-and-Sun" height="20">
 
 *Everyone deserves free access to information*
 

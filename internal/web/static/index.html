@@ -473,7 +473,7 @@
       text-decoration: underline
     }
 
-    .free-iran {
+    .positive-tag {
       color: var(--success);
       font-weight: 700
     }
@@ -3440,7 +3440,7 @@
             <label data-i18n="scanner_targets">IPs or CIDRs (one per line)</label>
             <div style="display:flex;gap:4px">
               <button class="btn btn-flat" onclick="document.getElementById('scanTargets').value='';updateScanIpCount()" data-i18n="scanner_clear_targets" style="font-size:12px;padding:4px 10px">&#128465; Clear</button>
-              <button class="btn btn-flat" onclick="loadScannerPresets()" style="font-size:12px;padding:4px 10px"><img class="iran-flag-icon" src="/static/iran-lion-sun.svg" alt="IR" style="height:14px;vertical-align:middle;margin-right:2px"> <span data-i18n="scanner_load_presets">Load IR Presets</span></button>
+              <button class="btn btn-flat" onclick="loadScannerPresets()" style="font-size:12px;padding:4px 10px"><img class="lion-sun-icon" src="/static/lion-sun.svg" alt="" style="height:14px;vertical-align:middle;margin-right:2px"> <span data-i18n="scanner_load_presets">Load Presets</span></button>
             </div>
           </div>
           <textarea id="scanTargets" rows="3" placeholder="5.1.0.0/16&#10;8.8.8.8&#10;1.1.1.1" style="width:100%;font-family:monospace;font-size:13px" oninput="updateScanIpCount()"></textarea>
@@ -3713,8 +3713,8 @@
         scanner_about_short: 'بازه‌های IP را اسکن کنید تا ریزالورهای DNS سازگار با سرور شما پیدا شوند.',
         scanner_read_more: 'بیشتر بخوانید...',
         scanner_read_less: 'بستن',
-        scanner_load_presets: 'بارگذاری لیست ایران',
-        scanner_preset_active: 'ریزالورهای ایران بارگذاری شد',
+        scanner_load_presets: 'بارگذاری لیست پیش‌فرض',
+        scanner_preset_active: 'ریزالورهای پیش‌فرض بارگذاری شد',
         scanner_from_input: 'از ورودی',
         scanner_from_preset: 'از پیش‌فرض',
         scanner_new_scan: 'اسکن جدید',
@@ -3958,8 +3958,8 @@
         scanner_about_short: 'Scan IP ranges to find DNS resolvers that work with your server.',
         scanner_read_more: 'Read more...',
         scanner_read_less: 'Show less',
-        scanner_load_presets: 'Load IR Presets',
-        scanner_preset_active: 'Iran resolvers loaded',
+        scanner_load_presets: 'Load Presets',
+        scanner_preset_active: 'Default resolvers loaded',
         scanner_from_input: 'from input',
         scanner_from_preset: 'from preset',
         scanner_new_scan: 'New Scan',
@@ -5962,7 +5962,7 @@
           }
           h += '<div class="ch-avatar">' + avatarImg + '<span class="ch-avatar-letter">' + esc(avatarText) + '</span></div>';
           var chSubText = !isX ? (handle.charAt(0) === '@' ? handle : '@' + handle) : '';
-          h += '<div class="ch-info"><div class="ch-name">' + formatIranTitleHtml(label) + (isPriv ? '<span class="ch-type-tag">' + t('private') + '</span>' : (isX ? '<span class="ch-type-tag x-tag">' + t('x_label') + '</span>' : '')) + '</div>';
+          h += '<div class="ch-info"><div class="ch-name">' + formatTitleWithFlag(label) + (isPriv ? '<span class="ch-type-tag">' + t('private') + '</span>' : (isX ? '<span class="ch-type-tag x-tag">' + t('x_label') + '</span>' : '')) + '</div>';
           if (chSubText) h += '<div class="ch-sub">' + esc(chSubText) + '</div>';
           h += '<div class="ch-preview">' + badge + '</div></div>';
           var autoKey = handle.replace(/^@/, '').trim();
@@ -6021,7 +6021,7 @@
       newMsgScrollDone = false;
       openChat();
       var ch = channels[num - 1]; var name = (ch && (ch.DisplayName || ch.displayName || ch.Name || ch.name)) || 'Channel ' + num;
-      document.getElementById('chatName').innerHTML = formatIranTitleHtml(name);
+      document.getElementById('chatName').innerHTML = formatTitleWithFlag(name);
       var chHandle = (ch && (ch.Name || ch.name)) || '';
       var isXCh = ch && (ch.ChatType || ch.chatType) === 2;
       var subHandle = (!isXCh && chHandle) ? (chHandle.charAt(0) === '@' ? chHandle : '@' + chHandle) : '';
@@ -7329,8 +7329,8 @@
     // and the body of a [REPLY] (so a reply that carries an image
     // still renders a downloadable media card instead of dropping it).
     function parseTextMedia(text, idBase) {
-      var iranify = function (s) {
-        return linkify(s).replace(/🇮🇷/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}☀️" style="height:1.1em;vertical-align:middle">');
+      var swapNationalFlag = function (s) {
+        return linkify(s).replace(/🇮🇷/g, '<img src="/static/lion-sun.svg" alt="\u{1F981}☀️" style="height:1.1em;vertical-align:middle">');
       };
       var mediaTypes = ['[IMAGE]', '[VIDEO]', '[FILE]', '[AUDIO]', '[STICKER]', '[GIF]', '[CONTACT]', '[LOCATION]'];
       var rest = text;
@@ -7354,15 +7354,15 @@
       var mediaHtml = '';
       var textHtml = '';
       if (cards.length === 0) {
-        textHtml = iranify(text);
+        textHtml = swapNationalFlag(text);
       } else if (cards.length === 1) {
         var c0 = cards[0];
         if (c0.parsed.downloadable || c0.parsed.size > 0) {
           mediaHtml = renderDownloadableMedia(c0.tag, c0.parsed, idBase);
-          textHtml = c0.parsed.caption ? iranify(c0.parsed.caption) : '';
+          textHtml = c0.parsed.caption ? swapNationalFlag(c0.parsed.caption) : '';
         } else {
           mediaHtml = '<div class="media-tag">' + c0.tag + '</div>';
-          textHtml = iranify(text.substring(c0.tag.length).replace(/^\n/, ''));
+          textHtml = swapNationalFlag(text.substring(c0.tag.length).replace(/^\n/, ''));
         }
       } else {
         mediaHtml = '<div class="media-album">';
@@ -7370,7 +7370,7 @@
           mediaHtml += renderDownloadableMedia(cards[k].tag, cards[k].parsed, idBase + '-' + k);
         }
         mediaHtml += '</div>';
-        textHtml = rest ? iranify(rest) : '';
+        textHtml = rest ? swapNationalFlag(rest) : '';
       }
       return { mediaHtml: mediaHtml, textHtml: textHtml };
     }
@@ -7429,7 +7429,7 @@
           text = '';
         }
         currentMsgTexts.push(text);
-        var mediaHtml = '', textHtml = linkify(text).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">');
+        var mediaHtml = '', textHtml = linkify(text).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">');
         // Check for [REPLY]:ID or [REPLY] format (backward compat: also [REPLY:ID])
         var replyMatch = text.match(/^\[REPLY\](?::(\d+))?/) || text.match(/^\[REPLY:(\d+)\]/);
         if (replyMatch) {
@@ -7502,11 +7502,11 @@
             if (c0.parsed.downloadable || c0.parsed.size > 0) {
               mediaHtml = renderDownloadableMedia(c0.tag, c0.parsed, id);
               textHtml = c0.parsed.caption
-                ? linkify(c0.parsed.caption).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">')
+                ? linkify(c0.parsed.caption).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">')
                 : '';
             } else {
               mediaHtml = '<div class="media-tag">' + c0.tag + '</div>';
-              textHtml = linkify(text.substring(c0.tag.length).replace(/^\n/, '')).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">');
+              textHtml = linkify(text.substring(c0.tag.length).replace(/^\n/, '')).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">');
             }
           } else {
             mediaHtml = '<div class="media-album">';
@@ -7516,7 +7516,7 @@
             }
             mediaHtml += '</div>';
             textHtml = rest
-              ? linkify(rest).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">')
+              ? linkify(rest).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">')
               : '';
           }
         }
@@ -7888,8 +7888,8 @@
     }
 
     // ===== UTILITIES =====
-    function formatIranTitleHtml(s) {
-      return esc(s).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1em;vertical-align:middle">');
+    function formatTitleWithFlag(s) {
+      return esc(s).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1em;vertical-align:middle">');
     }
     function esc(s) { var d = document.createElement('div'); d.appendChild(document.createTextNode(s)); return d.innerHTML }
     function escAttr(s) { return esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;') }
@@ -7936,7 +7936,7 @@
     // ===== SCANNER =====
     var scanPollTimer = null;
     var scanLastResults = []; // cache for selection
-    var scannerActivePreset = ''; // server-side preset name (e.g. 'ir')
+    var scannerActivePreset = ''; // server-side preset name (e.g. 'default')
     var scannerPresetIpCount = 0; // IP count from preset
 
     function countCIDRIPs(text) {
@@ -7998,7 +7998,7 @@
     }
 
     async function loadScannerPresets() {
-      if (scannerActivePreset === 'ir') {
+      if (scannerActivePreset === 'default') {
         // Toggle off
         scannerActivePreset = '';
         scannerPresetIpCount = 0;
@@ -8023,7 +8023,7 @@
       var tag = document.getElementById('scanPresetTag');
       if (scannerActivePreset) {
         tag.style.display = '';
-        tag.innerHTML = '<img src="/static/iran-lion-sun.svg" alt="IR" style="height:14px;vertical-align:middle;margin-right:4px"> ' + t('scanner_preset_active');
+        tag.innerHTML = '<img src="/static/lion-sun.svg" alt="" style="height:14px;vertical-align:middle;margin-right:4px"> ' + t('scanner_preset_active');
       } else {
         tag.style.display = 'none';
         tag.textContent = '';
